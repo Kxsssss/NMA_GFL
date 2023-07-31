@@ -140,12 +140,23 @@ simulti_p_aicc <- function(X, bb, fac){
       best_diff2 = matrix((true_dd - esti_best)^2, nrow = 1)
     }
     
+    ########## check 1-5
+    est_full_1_5 = as.vector(coef(mod))[4]
+    if (select_index == nrow(sum_table_a)){ #full model is selected
+      est_best_1_5 = est_full_1_5
+    }else{
+      est_best_1_5 = fit$beta[,select_index][4]
+    }
+    
+    real_1_5 = bb[4]
+    
     
     
     # add the row that has the smallest AICc values into the summary table
     sim_sum = rbind(sim_sum, 
                     cbind(select, correct, delta_AICc, path_indicator, 
-                          best_indicator, pair_values, full_diff2, best_diff2))
+                          best_indicator, pair_values, full_diff2, best_diff2,
+                          est_full_1_5, est_best_1_5, real_1_5))
     if(i%%200==0){print(i)}
   }
   rownames(sim_sum) = 1:nrow(sim_sum)
@@ -229,6 +240,45 @@ ps12a
 ps13a
 ```
 
+```{r}
+par(mfrow=c(3,1))
+dat_list = list( sim_sum1_0.1a,sim_sum1_1a, sim_sum1_10a)
+dat_titles = c("(0.5,1,3,5) & 0.1", "(0.5,1,3,5) & 1", "(0.5,1,3,5) & 10")
+
+mse_t = data.frame()
+
+for (i in 1:length(dat_list)){
+  mse_full = sqrt(apply(dat_list[[i]][22:31], 2, sum)/1000)
+  mse_best = sqrt(apply(dat_list[[i]][32:41], 2, sum)/1000)
+  tit = dat_titles[i]
+  
+  mse_t = rbind(mse_t, cbind(tit, matrix(round(mse_full, 4), nrow = 1)))
+  mse_t = rbind(mse_t, cbind(tit = "", matrix(round(mse_best, 4), nrow = 1)))
+  
+  if(i == 1){
+    plot(mse_full, mse_best, xlab = "MSE of Full Model", ylab = "MSE of Best Model",
+         xlim=c(0, sqrt(0.004)), 
+         ylim=c(0, sqrt(0.004)))
+    text(mse_full[1:4], mse_best[1:4]-0.0002, labels=c("1-2","1-3", "1-4", "1-5"))
+  }else if(i==2){
+    plot(mse_full, mse_best, xlab = "MSE of Full Model", ylab = "MSE of Best Model",
+         xlim=c(0,sqrt(0.75)), 
+         ylim=c(0, sqrt(0.75)))
+    text(mse_full[1:4], mse_best[1:4]-0.05, labels=c("1-2","1-3", "1-4", "1-5"))
+  }else{
+    plot(mse_full, mse_best, xlab = "MSE of Full Model", ylab = "MSE of Best Model",
+         xlim=c(0, 6.5), 
+         ylim=c(0, 6.5))
+    text(mse_full[1:4], mse_best[1:4]-1, labels=c("1-2","1-3", "1-4", "1-5"))
+  }
+  title(paste(tit))
+  abline(0,1, col = "red")
+}
+
+colnames(mse_t)[c(2:11)] = c("1-2","1-3", "1-4", "1-5", "2-3",
+                             "2-4", "2-5", "3-4", "3-5", "4-5")
+
+```
 
 
 
@@ -253,6 +303,7 @@ ps21a
 ps22a
 ps23a
 ```
+
 
 
 
@@ -383,25 +434,28 @@ dat_titles = c("(0,0,0,0) & 0.1", "(0.5,1,3,5) & 0.1", "(1,1,-2,-2) & 0.1", "(1,
 mse_t = data.frame()
 
 for (i in 1:length(dat_list)){
-  mse_full = apply(dat_list[[i]][22:31], 2, sum)/1000
-  mse_best = apply(dat_list[[i]][32:41], 2, sum)/1000
+  mse_full = sqrt(apply(dat_list[[i]][22:31], 2, sum)/1000)
+  mse_best = sqrt(apply(dat_list[[i]][32:41], 2, sum)/1000)
   tit = dat_titles[i]
   
   mse_t = rbind(mse_t, cbind(tit, matrix(round(mse_full, 4), nrow = 1)))
   mse_t = rbind(mse_t, cbind(tit = "", matrix(round(mse_best, 4), nrow = 1)))
   
   if(i<=4){
-    plot(mse_full, mse_best, xlab = "MSE of Full Model", ylab = "MSE of Best Model",
-         xlim=c(0, 0.004), 
-         ylim=c(0, 0.004))
+    plot(mse_full, mse_best, xlab = "RMSE of Full Model", ylab = "RMSE of Best Model",
+         xlim=c(0, sqrt(0.004)), 
+         ylim=c(0, sqrt(0.004)))
+    text(mse_full[1:4], mse_best[1:4]-0.0002, labels=c("1-2","1-3", "1-4", "1-5"))
   }else if(i<=8){
-    plot(mse_full, mse_best, xlab = "MSE of Full Model", ylab = "MSE of Best Model",
-         xlim=c(0, 0.75), 
-         ylim=c(0, 0.75))
+    plot(mse_full, mse_best, xlab = "RMSE of Full Model", ylab = "RMSE of Best Model",
+         xlim=c(0,sqrt(0.75)), 
+         ylim=c(0, sqrt(0.75)))
+    text(mse_full[1:4], mse_best[1:4]-0.05, labels=c("1-2","1-3", "1-4", "1-5"))
   }else{
-    plot(mse_full, mse_best, xlab = "MSE of Full Model", ylab = "MSE of Best Model",
-         xlim=c(0, 32), 
-         ylim=c(0, 32))
+    plot(mse_full, mse_best, xlab = "RMSE of Full Model", ylab = "RMSE of Best Model",
+         xlim=c(0, 6.5), 
+         ylim=c(0, 6.5))
+    text(mse_full[1:4], mse_best[1:4]-1, labels=c("1-2","1-3", "1-4", "1-5"))
   }
   title(paste(tit))
   abline(0,1, col = "red")
@@ -412,7 +466,65 @@ colnames(mse_t)[c(2:11)] = c("1-2","1-3", "1-4", "1-5", "2-3",
 
 ```
 
+```{r}
+par(mfrow=c(3,4))
+dat_list = list(sim_sum0_0.1_a, sim_sum1_0.1a, sim_sum2_0.1a, sim_sum3_0.1a,
+                sim_sum0_1_a, sim_sum1_1a, sim_sum2_1a, sim_sum3_1a,
+                sim_sum0_10_a, sim_sum1_10a, sim_sum2_10a, sim_sum3_10a)
+dat_titles = c("(0,0,0,0) & 0.1", "(0.5,1,3,5) & 0.1", "(1,1,-2,-2) & 0.1", "(1,1,1,-2) & 0.1", 
+               "(0,0,0,0) & 1", "(0.5,1,3,5) & 1", "(1,1,-2,-2) & 1", "(1,1,1,-2) & 1",
+               "(0,0,0,0) & 10", "(0.5,1,3,5) & 10", "(1,1,-2,-2) & 10", "(1,1,1,-2) & 10")
 
+mse_f = data.frame()
+
+for (i in 1:length(dat_list)){
+  mse_full = sqrt(apply(dat_list[[i]][22:31], 2, sum)/1000)
+  mse_best = sqrt(apply(dat_list[[i]][32:41], 2, sum)/1000)
+  tit = dat_titles[i]
+  
+  mse_f = data.frame(matrix(round(mse_full, 4), ncol = 1))
+  colnames(mse_f) = tit
+  mse_f$Colour="gray45"
+  mse_f$Colour[1:4]="black"
+  if(i<=4){
+    plot(mse_full, mse_best, xlab = "RMSE of Full Model", ylab = "RMSE of Best Model",
+         xlim=c(0, sqrt(0.004)), 
+         ylim=c(0, sqrt(0.004)),
+         col = mse_f$Colour)
+  }else if(i<=8){
+    plot(mse_full, mse_best, xlab = "RMSE of Full Model", ylab = "RMSE of Best Model",
+         xlim=c(0,sqrt(0.75)), 
+         ylim=c(0, sqrt(0.75)),
+         col = mse_f$Colour)
+  }else{
+    plot(mse_full, mse_best, xlab = "RMSE of Full Model", ylab = "RMSE of Best Model",
+         xlim=c(0, 6.5), 
+         ylim=c(0, 6.5),
+         col = mse_f$Colour)
+  }
+  title(paste(tit))
+  abline(0,1, col = "red")
+}
+
+colnames(mse_t)[c(2:11)] = c("1-2","1-3", "1-4", "1-5", "2-3",
+                             "2-4", "2-5", "3-4", "3-5", "4-5")
+```
+
+```{r}
+mse_full = sim_sum1_1a[,42]
+mse_best = sim_sum1_1a[,43]
+mse_full1 = sim_sum1_1a[,25]
+mse_best1 = sim_sum1_1a[,35]
+par(mfrow=c(2,2))
+boxplot(mse_full, main = "Full model - estimated 1-5")
+boxplot(mse_best, main = "Best model - estimated 1-5")
+boxplot(mse_full1, main = "Full model - difference^2 1-5")
+boxplot(mse_best1, main = "Best model - difference^2 1-5")
+```
+```{r}
+hist(mse_best)
+hist(mse_full)
+```
 
 
 
