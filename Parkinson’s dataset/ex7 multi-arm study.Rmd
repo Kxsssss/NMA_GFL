@@ -222,18 +222,10 @@ t2
 net = netmeta(TE, seTE, treat1, treat2, studlab, data = p1, sm = "MD", reference = "plac")
 ```
 
-
-
 ```{r}
-dd = data.frame(round(gene_dd(fit$beta[,12]), 2))
-colnames(dd) = "differences"
-rownames(dd) = c("12", "13", "14", "15", "23", "24", "25", "34", "35", "45")
-dd[c("15", "12", "13", "14"),]
--dd[c("25", "35", "45"),]
-dd[c("23", "24"),]
-dd[c("34"),]
+ddd <- fit$beta[,12]
+outer(sort(c(0,ddd), decreasing = TRUE),sort(c(0,ddd), decreasing = TRUE),"-")
 ```
-
 
 
 
