@@ -212,7 +212,8 @@ sum$x
 netleague
 ```{r}
 library(writexl)
-t1 = netleague(net,net, digits = 2) # writexl=TRUE
+t1 = netleague(net,net, digits = 2, 
+               seq = c("Placebo", "Ropinirole","Bromocriptine","Cabergoline","Pramipexole")) # writexl=TRUE
 t2 = t1$fixed
 t2
 ```
@@ -224,25 +225,13 @@ net = netmeta(TE, seTE, treat1, treat2, studlab, data = p1, sm = "MD", reference
 
 
 ```{r}
-best_beta = fit$beta[,12]
-d12 = best_beta[1]
-d13 = best_beta[2]
-d14 = best_beta[3]
-d15 = best_beta[4]
-
-d23 = d13 - d12
-d24 = d14 - d12
-d25 = d15 - d12
-
-d34 = d14 - d13
-d35 = d15 - d13
-
-d45 = d15 -d14
-
-round(c(d23, d12, d24, d25), 4)
-round(c(d13, d34, d35), 4)
-round(c(d14, d15), 4)
-round(d45,4)
+dd = data.frame(round(gene_dd(fit$beta[,12]), 2))
+colnames(dd) = "differences"
+rownames(dd) = c("12", "13", "14", "15", "23", "24", "25", "34", "35", "45")
+dd[c("15", "12", "13", "14"),]
+-dd[c("25", "35", "45"),]
+dd[c("23", "24"),]
+dd[c("34"),]
 ```
 
 
