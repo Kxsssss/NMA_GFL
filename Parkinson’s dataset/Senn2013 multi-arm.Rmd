@@ -1,0 +1,212 @@
+---
+title: "Senn2013 example"
+author: "Sandy Kong"
+date: "2023-03-23"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list = ls())
+```
+
+```{r}
+# To load the data again
+load("Senn.RData")
+```
+
+
+# Multi-arm study
+```{r}
+data(Senn2013)
+```
+
+```{r}
+# find the multi arms
+m_study = multi_study(Senn2013)
+m_study
+```
+
+```{r}
+# calculate the covariance
+cov_Willms1999 = (0.3758^2 + 0.3579^2 - 0.4669^2) / 2
+cov_Willms1999
+```
+```{r}
+##### Random Effect
+# calculate the covariance under random effect model
+cov_Willms1999 = (0.3758^2 + 0.3579^2 - 0.4669^2 + net$tau2) / 2
+cov_Willms1999
+```
+
+```{r}
+# keep only the 2 arms that have placebo as comparator.
+# senn_multi = Senn2013[-3,]
+senn_multi = Senn2013[-28,]
+senn_multi[order(senn_multi$studlab),]
+```
+
+
+```{r}
+# matrix with all var on diagonal
+var_cov = diag((senn_multi$seTE)^2)
+# find the indexes that stands for multi-arm studies 
+multi_index = which(senn_multi$studlab == unique(as.vector(m_study$studlab)))
+# update the cov terms in the var_cov matrix 
+var_cov[multi_index[1],multi_index[2]] = cov_Willms1999
+var_cov[multi_index[2],multi_index[1]] = cov_Willms1999
+
+# better visualization
+t = data.frame(var_cov)
+```
+
+```{r}
+##### Random effect
+# matrix with all var on diagonal
+var_cov = diag((senn_multi$seTE)^2)
+# Variance-covariant matrix under random effect model
+var_cov = var_cov + net$tau2*diag(dim(var_cov)[1]) 
+# find the indexes that stands for multi-arm studies 
+multi_index = which(senn_multi$studlab == unique(as.vector(m_study$studlab)))
+# update the cov terms in the var_cov matrix 
+var_cov[multi_index[1],multi_index[2]] = cov_Willms1999
+var_cov[multi_index[2],multi_index[1]] = cov_Willms1999
+```
+
+
+```{r}
+D = chol(solve(var_cov))
+w = D
+```
+
+
+```{r}
+y = matrix(senn_multi$TE, nrow = length(senn_multi$TE), ncol = 1)
+
+# X ('plac' as reference)
+X =  X_matrix(senn_multi$treat1, senn_multi$treat2, ref = "plac", 
+              n = 10) # n is the total number of distinct treatments
+
+n = length(y)
+K = ncol(X)
+```
+
+```{r}
+e = c()
+for (i in 1:9){
+  for (j in (i + 1):9){
+    e = append(e, c(i, j))
+  }
+}
+e = head(e, -4)
+gr = graph(e, directed=FALSE)
+# total_levels = sort(unique(c(levels(s_data$treat1), levels(s_data$treat2))))
+# V(gr)$name = total_levels[-which(total_levels == "plac")]
+plot(gr)
+```
+```{r}
+palette(brewer.pal(n = 10, ))
+```
+
+```{r}
+fit = fusedlasso(y=w%*%y, X=w%*%X, graph = gr, gamma=1)
+# with 0 added and log scale
+```
+
+
+```{r}
+cbp1 <- c("#999999", "#E69F00", "#56B4E9", "#009E73","#CC79A7")
+fusedLasso_gr_cubic(fit)
+```
+
+
+```{r}
+# from general code, step-by-step shown in the general file 
+rss = summary(fit)[,3]
+Ks = summary(fit)[,1]
+beta = fit$beta[, best_row(rss, Ks)]
+
+# Calculate the rss for the full model 
+mod = glm(w%*%y ~ w%*%X - 1)
+rss_full = deviance(mod)
+
+# update variables 
+rss = c(rss, rss_full)
+Ks = c(Ks, K)
+
+# adding the full model to the summary
+sum_table = rbind(summary(fit), c(K, 0, rss_full))
+
+# Add corresponding AICc values into the table 
+sum_table_a = data.frame(cbind(sum_table, AICc = AICc_rss(rss, Ks, n)))
+rownames(sum_table_a) = 1:nrow(sum_table_a)
+
+sum_table_a$lambda = sum_table_a$lambda^(1/3)
+
+sum_table_a
+```
+
+```{r}
+tt = data.frame(sum_table_a)[which(sum_table_a$df != 0),]
+tt = rbind(sum_table_a[which(sum_table_a$df != 0)[1] - 1, ], tt)
+ref = min(tt$AICc)
+tt$delta_AICc = tt$AICc - ref
+tt[,3:5] = round(tt[,3:5], 1)
+# tt$rss = round(tt$rss, 0)
+tt$lambda = round(tt$lambda, 3)
+tt
+```
+
+```{r}
+net = netmeta(TE, seTE, treat1, treat2, studlab, data = Senn2013, sm = "MD", reference = "plac")
+netgraph(net)
+```
+
+```{r}
+# check the fixed-effect model
+fit$bls
+sum = summary(net)
+sum$x
+```
+
+
+netleague
+```{r}
+library(writexl)
+t1 = netleague(net, net, digits = 2, 
+               seq = c("plac", "sulf","sita","vild","benf", "acar", 
+                       "migl", "piog", "metf", "rosi")) # writexl=TRUE
+t2 = t1$random
+t2
+```
+
+
+```{r}
+ddd <- fit$beta[,35]
+outer(sort(c(0,ddd), decreasing = TRUE),sort(c(0,ddd), decreasing = TRUE),"-")
+```
+
+
+
+
+
+rankogram
+```{r}
+set.seed(4)
+rank_ = rankogram(net)
+plot(rank_, common = rank_$random)
+```
+```{r}
+sort(round(rank_$ranking.random,4))
+#rank_$ranking.common
+```
+
+
+```{r}
+# Save multiple objects
+save(m_study, senn_multi, fit, sum_table_a, net, file = "Senn.RData")
+```
+
