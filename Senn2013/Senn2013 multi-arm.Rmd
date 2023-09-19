@@ -10,16 +10,21 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
+# clean the environment and 
 rm(list = ls())
+# run all helper functions
+source("../Functions.R")
 ```
 
 ```{r}
+### NEED TO RUN ALL CODE ONCE BEFORE USING
 # To load the data again
 load("Senn.RData")
 ```
 
 
-# Multi-arm study
+# Load the data
+
 ```{r}
 data(Senn2013)
 ```
@@ -31,26 +36,29 @@ m_study
 ```
 
 ```{r}
+##### Fixed Effect
 # calculate the covariance
 cov_Willms1999 = (0.3758^2 + 0.3579^2 - 0.4669^2) / 2
 cov_Willms1999
 ```
 ```{r}
 ##### Random Effect
+net = netmeta(TE, seTE, treat1, treat2, studlab, data = Senn2013, sm = "MD", reference = "plac")
+
 # calculate the covariance under random effect model
 cov_Willms1999 = (0.3758^2 + 0.3579^2 - 0.4669^2 + net$tau2) / 2
 cov_Willms1999
 ```
 
 ```{r}
-# keep only the 2 arms that have placebo as comparator.
-# senn_multi = Senn2013[-3,]
+# keep only the 2 arms
 senn_multi = Senn2013[-28,]
 senn_multi[order(senn_multi$studlab),]
 ```
 
 
 ```{r}
+##### Fixed Effect
 # matrix with all var on diagonal
 var_cov = diag((senn_multi$seTE)^2)
 # find the indexes that stands for multi-arm studies 
@@ -78,23 +86,21 @@ var_cov[multi_index[2],multi_index[1]] = cov_Willms1999
 
 
 ```{r}
+# Choleski Decomposition of var_cov matrix
 D = chol(solve(var_cov))
+
 w = D
-```
-
-
-```{r}
 y = matrix(senn_multi$TE, nrow = length(senn_multi$TE), ncol = 1)
 
 # X ('plac' as reference)
 X =  X_matrix(senn_multi$treat1, senn_multi$treat2, ref = "plac", 
               n = 10) # n is the total number of distinct treatments
-
 n = length(y)
 K = ncol(X)
 ```
 
 ```{r}
+# create a completed graph with 9 vertices
 e = c()
 for (i in 1:9){
   for (j in (i + 1):9){
@@ -103,26 +109,19 @@ for (i in 1:9){
 }
 e = head(e, -4)
 gr = graph(e, directed=FALSE)
-# total_levels = sort(unique(c(levels(s_data$treat1), levels(s_data$treat2))))
-# V(gr)$name = total_levels[-which(total_levels == "plac")]
 plot(gr)
 ```
-```{r}
-palette(brewer.pal(n = 10, ))
-```
 
 ```{r}
+### DEFAULT WAY OF DRAWING THE COORDINATE PATH
+#   (the red line represents lambda where the paths are separated)
 fit = fusedlasso(y=w%*%y, X=w%*%X, graph = gr, gamma=1)
-# with 0 added and log scale
-```
-
-
-```{r}
-cbp1 <- c("#999999", "#E69F00", "#56B4E9", "#009E73","#CC79A7")
 fusedLasso_gr_cubic(fit)
 ```
 
 
+
+# AICc summary 
 ```{r}
 # from general code, step-by-step shown in the general file 
 rss = summary(fit)[,3]
@@ -144,12 +143,15 @@ sum_table = rbind(summary(fit), c(K, 0, rss_full))
 sum_table_a = data.frame(cbind(sum_table, AICc = AICc_rss(rss, Ks, n)))
 rownames(sum_table_a) = 1:nrow(sum_table_a)
 
+# cubic scale
 sum_table_a$lambda = sum_table_a$lambda^(1/3)
 
 sum_table_a
 ```
 
 ```{r}
+# create a table that only include the first row of df = 0 
+#   with all other rows 
 tt = data.frame(sum_table_a)[which(sum_table_a$df != 0),]
 tt = rbind(sum_table_a[which(sum_table_a$df != 0)[1] - 1, ], tt)
 ref = min(tt$AICc)
@@ -159,6 +161,37 @@ tt[,3:5] = round(tt[,3:5], 1)
 tt$lambda = round(tt$lambda, 3)
 tt
 ```
+
+```{r}
+### DRAWING THE COORDINATE PATH BY COODING
+#   (the red line represent the best lambda under AICc)
+
+fit = fusedlasso(y=w%*%y, X=w%*%X, graph = gr, gamma=1)
+fit$beta <- rbind(rep(0,  dim(fit$beta)[2]), fit$beta)
+fit$bls <- c(0, fit$bls)
+fit$lambda <- (fit$lambda)^(1/3)
+
+p_matrix<- rbind(t(fit$beta), fit$bls)
+x <- c(0, rev(fit$lambda))
+
+data <- data.frame(x = rep(x, ncol(p_matrix)), 
+                   value=rev(as.numeric(p_matrix)), 
+                   treatment=rep(paste0('', rev(1:ncol(p_matrix))), each=length(x)))
+
+ggplot(data = data, aes(x=x, y=value)) + 
+  geom_line(aes(colour=treatment))+                            
+  geom_vline(xintercept = rev(fit$lambda[-35]), linetype="dashed") +
+  geom_vline(xintercept = fit$lambda[35], linetype="dashed", color = "red") +
+  xlab(expression(lambda^{frac(1, 3)})) + ylab("Coordinates of d")
+```
+
+```{r}
+# save the coordinate path with certain requirements 
+ggsave(file = "Senn2013_fusedLasso_multi_random.eps", dpi = 800, width = 10, height = 4.5, limitsize = FALSE) 
+```
+
+
+# Analysis with 'netmeta' package
 
 ```{r}
 net = netmeta(TE, seTE, treat1, treat2, studlab, data = Senn2013, sm = "MD", reference = "plac")
@@ -173,39 +206,62 @@ sum$x
 ```
 
 
-netleague
+
 ```{r}
-library(writexl)
+# the league table with given order of treatments 
 t1 = netleague(net, net, digits = 2, 
                seq = c("plac", "sulf","sita","vild","benf", "acar", 
-                       "migl", "piog", "metf", "rosi")) # writexl=TRUE
+                       "migl", "piog", "metf", "rosi")) 
+# the random effect model
 t2 = t1$random
 t2
 ```
 
+```{r}
+# calculate the coefficient of variation of treatments 
+#   in the same order of the league table
+cv_t = data.frame()
+for (i in 2:nrow(t2)){
+  for (j in 1:(i-1)) {
+    a = t2[i,j]
+    # transfer the string in the league table into numbers 
+    results = league_str_num(a)
+    # calculate the cv
+    cv_t[i,j] = ((league_str_num(a)[3] - 
+                    league_str_num(a)[2])/4)/league_str_num(a)[1]
+  }
+}
+round(cv_t,4)
+```
+
 
 ```{r}
+# beta values of the best model under AICc
 ddd <- fit$beta[,35]
-outer(sort(c(0,ddd), decreasing = TRUE),sort(c(0,ddd), decreasing = TRUE),"-")
+# calculate the GFL-NMA estimates of the lowest AICc model
+ttt <- outer(sort(c(0,ddd), decreasing = TRUE),sort(c(0,ddd), decreasing = TRUE),"-")
+round(ttt,2)
 ```
 
 
 
-
-
-rankogram
 ```{r}
+# The rankgram of the data
 set.seed(4)
 rank_ = rankogram(net)
-plot(rank_, common = rank_$random)
+plot(rank_)
 ```
 ```{r}
+# SUCRA values (round in 2 digits)
 sort(round(rank_$ranking.random,4))
-#rank_$ranking.common
 ```
 
 
+
+# Save some main results for future using 
+
 ```{r}
+### RUN THIS BEFORE RELOAD THE RESULTS
 # Save multiple objects
 save(m_study, senn_multi, fit, sum_table_a, net, file = "Senn.RData")
 ```
