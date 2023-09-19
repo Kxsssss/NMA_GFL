@@ -8,6 +8,7 @@ library(netmeta)
 library(ggplot2)
 library(scales)
 library(MASS)
+library(gemtc)
 
 
 ###### helper functions 
@@ -45,7 +46,7 @@ fusedLasso_gr_log = function(fit){
        ylab = "Coordinates of d")
 }
 
-# Return the plot of fitted model by adding an extra 0 line with log scale
+# Return the plot of fitted model by adding an extra 0 line with cubic scale
 fusedLasso_gr_cubic = function(fit){
   fit$beta <- rbind(rep(0,  dim(fit$beta)[2]), fit$beta)
   fit$bls <- c(0, fit$bls)
@@ -167,6 +168,7 @@ gene_dd = function(d1k){
   dd
 }
 
+##### helper for simulation study 
 prob_sum<- function(sim_sum){
   n = 1000
   
@@ -229,7 +231,196 @@ prob_sum<- function(sim_sum){
 }
 
 
+# A helper function that can transfer the info in cells 
+#   of the netleague from string into numbers in form of 
+#   c(estimate, left ci bound, right ci bound)
+league_str_num <- function(a){
+  # find the index of all whitespaces
+  w_space_i = unlist(gregexpr(' ', a))
+  # index of character where end the estimator 
+  est_end = w_space_i[1] - 1
+  # index of character where start and end the left ci bound
+  ci_l_start = w_space_i[1] + 2
+  if(length(w_space_i) == 4){ci_l_end = w_space_i[3] - 2}else{ci_l_end = w_space_i[2] - 2}
+  # index of character where start and end the right ci bound
+  ci_r_start = w_space_i[length(w_space_i)] + 1
+  ci_r_end = nchar(a) - 1
+  
+  c(as.numeric(substr(a,1, est_end)),
+    as.numeric(substr(a,ci_l_start, ci_l_end)), 
+    as.numeric(substr(a,ci_r_start, ci_r_end)))
+}
 
-
+simulti_p_aicc <- function(X, bb, fac){
+  ### e
+  # generate 1000 epsilon
+  size = 1000                                      
+  meanvector = rep(0, nrow(X))                                 
+  # matrix with all var on diagonal
+  var_cov = diag((pksn_multi$seTE*fac)^2)
+  # find the indexes that stands for multi-arm 
+  multi_index = which(pksn_multi$studlab == unique(as.vector(p_study$studlab)))
+  # update the cov terms in the var_cov matrix 
+  var_cov[multi_index[1],multi_index[2]] = cov_Guttman1997 * (fac^2)
+  var_cov[multi_index[2],multi_index[1]] = cov_Guttman1997 * (fac^2)
+  e <- mvrnorm(n = size, mu = meanvector, Sigma = var_cov)
+  
+  ### y
+  y_ = matrix(rep(as.numeric(X %*% bb), 1000), ncol = nrow(X), byrow=TRUE) + e
+  
+  sim_sum = data.frame()
+  for (i in 1:1000) {
+    y = y_[i,]
+    n = length(y)
+    K = ncol(X)
+    # Choleski Decomposition of var_cov matrix
+    w = chol(solve(var_cov))
+    gr <- graph(c(1,2,1,3,1,4,2,3,2,4,3,4), directed=FALSE)
+    fit = fusedlasso(y=w%*%y, X=w%*%X, graph = gr, gamma=1)
+    # fusedLasso_gr(fit) (graph code)
+    
+    ### df, lambda, rss, AICc
+    rss = summary(fit)[,3]
+    Ks = summary(fit)[,1]
+    beta = fit$beta[, best_row(rss, Ks, n)]
+    # Calculate the rss for the full model 
+    mod = glm(w%*%y ~ w%*%X - 1)
+    rss_full = deviance(mod)
+    # update variables 
+    rss = c(rss, rss_full)
+    Ks = c(Ks, K)
+    # adding the full model to the summary
+    sum_table = rbind(summary(fit), c(K, 0, rss_full))
+    # Add corresponding AICc values into the table 
+    sum_table_a = data.frame(cbind(sum_table, AICc = AICc_rss(rss, Ks, n)))
+    rownames(sum_table_a) = 1:nrow(sum_table_a)
+    
+    
+    # based on each case, give the correct df
+    #   (0,0,0,0), all same, correct df = 0
+    #   (0.5,1,3,5), all diff, correct df = 4
+    #   (1,1,-2,-2), correct df = 2
+    #   (1,1,1,-2), correct df = 1
+    if (all(bb == rep(0, 4))){correct_df = 0}
+    if (all(bb == c(0.5,1,3,5))){correct_df = 4}
+    if (all(bb == c(1,1,-2,-2))){correct_df = 2}
+    if (all(bb == c(1,1,1,-2))){correct_df = 2}
+    
+    #### delta_AIC 
+    #   (the difference between the correct model and the selected one)
+    # if df = 0 gives the smallest AICc, then only the smallest lambda is added
+    select_index = max(which(sum_table_a$AICc == min(sum_table_a$AICc)))
+    select = sum_table_a[select_index,]
+    # under the correct df, find the one that has the smallest AICc 
+    df_index = which(sum_table_a$df == correct_df)
+    df_rows = sum_table_a[df_index,]
+    correct = df_rows[max(which(df_rows$AICc == min(df_rows$AICc))),]
+    delta_AICc = abs(select$AICc - correct$AICc)
+    
+    #### Path check
+    # based on each case, give the correct pooling pairs
+    if (all(bb == c(0.5,1,3,5))){cpair = c()}
+    if (all(bb == c(1,1,-2,-2))){cpair = c(23, 45)}
+    if (all(bb == c(1,1,1,-2))){cpair = c(23, 24, 34)}
+    # under correct df, see if there exist a model that has correct path
+    # path indicator (path_indicator) is set to be no as default
+    path_indicator = "no"
+    if (correct_df == 0 | correct_df == 4){path_indicator = "yes"}
+    # (1,1,-2,-2)
+    if (all(bb == c(1,1,-2,-2))){
+      j = 1
+      while (path_indicator == "no" & j <= length(df_index)) {
+        pool_pairs_model = pairwise_pool_names(df_index[j], fit)
+        #print(i)
+        #print(pool_pairs_model)
+        if (length(pool_pairs_model) == 2){
+          if (all(pool_pairs_model == cpair)){path_indicator = "yes"}
+        }
+        j = j + 1
+      }
+    }
+    # (1,1,1,-2)
+    if (all(bb == c(1,1,1,-2))){
+      j = 1
+      while (path_indicator == "no" & j <= length(df_index)) {
+        pool_pairs_model = pairwise_pool_names(df_index[j], fit)
+        #print(i)
+        #print(pool_pairs_model)
+        if (length(pool_pairs_model) == 3){
+          if (all(pool_pairs_model == cpair)){path_indicator = "yes"}
+        }
+        j = j + 1
+      }
+    }
+    
+    
+    ### false pooling within the best model 
+    pair_values = rep(0, 10)
+    names = c(12, 13, 14, 15, 23, 24, 25, 34, 35, 45)
+    pool_best = pairwise_pool_names(select_index, fit)
+    # indicator of FP, default is no, which means no FP
+    best_indicator = "no"
+    if (correct_df == 0){
+      best_indicator = "no"
+    }else if (correct_df == 4){
+      if (!is.null(pool_best)){best_indicator = "yes"}
+    }else{
+      ss = append(cpair, pool_best)
+      # if further pooling are there compared to the correct pairs
+      if (length(unique(ss)) > length(cpair)) {best_indicator = "yes"}
+    }
+    # update 1-2 1-3 1-4 1-5 2-3 2-4 2-5 3-4 3-5 4-5
+    for (k in pool_best){
+      pair_values[which(names == k)] = 1
+    }
+    pair_values = matrix(pair_values, nrow = 1)
+    
+    
+    
+    ### (estimated dd - true dd)^2 for best model and full model 
+    # true values 
+    true_dd = gene_dd(bb)
+    # full model 
+    esti_full = gene_dd(as.vector(coef(mod)))
+    full_diff2 = matrix((true_dd - esti_full)^2, nrow = 1)
+    # best model 
+    if (select_index == nrow(sum_table_a)){ #full model is selected
+      best_diff2 = full_diff2
+    }else{
+      esti_best = gene_dd(fit$beta[,select_index])
+      best_diff2 = matrix((true_dd - esti_best)^2, nrow = 1)
+    }
+    
+    ########## check 1-5
+    est_full_1_5 = as.vector(coef(mod))[4]
+    if (select_index == nrow(sum_table_a)){ #full model is selected
+      est_best_1_5 = est_full_1_5
+    }else{
+      est_best_1_5 = fit$beta[,select_index][4]
+    }
+    
+    real_1_5 = bb[4]
+    
+    
+    
+    # add the row that has the smallest AICc values into the summary table
+    sim_sum = rbind(sim_sum, 
+                    cbind(select, correct, delta_AICc, path_indicator, 
+                          best_indicator, pair_values, full_diff2, best_diff2,
+                          est_full_1_5, est_best_1_5, real_1_5))
+    if(i%%200==0){print(i)}
+  }
+  rownames(sim_sum) = 1:nrow(sim_sum)
+  colnames(sim_sum)[c(1, 5)] = c("select_df", "correct_df")
+  colnames(sim_sum)[c(12:21)] = c("1-2_poll","1-3", "1-4", "1-5", "2-3", "2-4",
+                                  "2-5", "3-4", "3-5", "4-5_poll")
+  colnames(sim_sum)[c(22:31)] = c("1-2_full","1-3", "1-4", "1-5", "2-3", "2-4",
+                                  "2-5", "3-4", "3-5", "4-5_full")
+  colnames(sim_sum)[c(32:41)] = c("1-2_best","1-3", "1-4", "1-5", "2-3", "2-4",
+                                  "2-5", "3-4", "3-5", "4-5_best")
+  
+  
+  sim_sum
+}
 
 
