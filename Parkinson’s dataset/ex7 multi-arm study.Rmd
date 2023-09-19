@@ -1,7 +1,5 @@
 ---
-title: "General code"
-author: "Sandy Kong"
-date: "2023-03-14"
+title: "Code for Parkinson's dataset"
 output: pdf_document
 ---
 
@@ -10,16 +8,20 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
+# clean the environment and 
 rm(list = ls())
+# run all helper functions
+source("../Functions.R")
 ```
 
 ```{r}
+### NEED TO RUN ALL CODE ONCE BEFORE USING
 # To load the data again
 load("Parkn.RData")
 ```
 
 
-# Muilt-arm study
+# Load the data
 
 ```{r}
 data(Franchini2012) # Transform data from arm-based format to contrast-based format 
@@ -41,8 +43,7 @@ cov_Guttman1997
 
 
 ```{r}
-# keep only the 2 arms that have placebo as comparator
-# pksn_multi = p1[-5, 1:5]
+# keep only the 2 arms studies
 pksn_multi = p1[-3, 1:5]
 pksn_multi[order(pksn_multi$studlab),]
 ```
@@ -52,6 +53,7 @@ pksn_multi
 ```
 
 
+# Model
 
 ```{r}
 # matrix with all var on diagonal
@@ -97,17 +99,17 @@ plot(gr)
 ```
 
 ```{r}
-brewer.pal(n = 8, name = "Dark2")
-```
-
-```{r}
+### DEFAULT WAY OF DRAWING THE COORDINATE PATH
+#   (the red line represents lambda where the paths are separated)
 # gr is needed
 fit = fusedlasso(y=w%*%y, X=w%*%X, graph = gr, gamma=1)
 fusedLasso_gr(fit)
 ```
-## AICc summary 
+
+
+
+# AICc summary 
 ```{r}
-# from general code, step-by-step shown in the general file 
 rss = summary(fit)[,3]
 Ks = summary(fit)[,1]
 beta = fit$beta[, best_row(rss, Ks)]
@@ -140,41 +142,18 @@ for (i in 0:K){
 }
 rownames(sub_sum) = 1:(K + 1)
 
-# Add the weight to the sub summary table 
-sub_sum$weight = exp(-0.5 * sub_sum$AICc)/sum(exp(-0.5 * sub_sum$AICc))
-
 # add delta_AIC
 ref = min(sub_sum$AICc)
 sub_sum$delta_AICc = sub_sum$AICc - ref
 sub_sum
 ```
-## BICc summary
-```{r}
-rss = summary(fit)[,3]
-Ks = summary(fit)[,1]
-beta = fit$beta[, best_row(rss, Ks)]
 
-# Calculate the rss for the full model 
-mod = glm(w%*%y ~ w%*%X - 1)
-rss_full = deviance(mod)
-
-# update variables 
-rss = c(rss, rss_full)
-Ks = c(Ks, K)
-
-# adding the full model to the summary
-sum_table = rbind(summary(fit), c(K, 0, rss_full))
-
-# Add corresponding AICc values into the table 
-sum_table_a = data.frame(cbind(sum_table, BICc = BICc_rss(rss, Ks)))
-rownames(sum_table_a) = 1:nrow(sum_table_a)
-
-sum_table_a
-```
 
 
 
 ```{r}
+# create a table that only include the first row of df = 0 
+#   with all other rows 
 tt = data.frame(sum_table_a)[which(sum_table_a$df != 0),]
 tt = rbind(sum_table_a[which(sum_table_a$df != 0)[1] - 1, ], tt)
 ref = min(tt$AICc)
@@ -183,24 +162,44 @@ tt
 ```
 
 
+```{r}
+### DRAWING THE COORDINATE PATH BY COODING
+#   (the red line represent the best lambda under AICc)
 
+fit = fusedlasso(y=w%*%y, X=w%*%X, graph = gr, gamma=1)
+fit$beta <- rbind(rep(0,  dim(fit$beta)[2]), fit$beta)
+fit$bls <- c(0, fit$bls)
+
+
+p_matrix<- rbind(t(fit$beta), fit$bls)
+x <- c(0, rev(fit$lambda))
+
+data <- data.frame(x = rep(x, ncol(p_matrix)), 
+                   value=rev(as.numeric(p_matrix)), 
+                   treatment=rep(paste0('', rev(1:ncol(p_matrix))), each=length(x)))
+
+ggplot(data = data, aes(x=x, y=value)) + 
+  geom_line(aes(colour=treatment))+                            
+  geom_vline(xintercept = rev(fit$lambda[-12]), linetype="dashed") +
+  geom_vline(xintercept = fit$lambda[12], linetype="dashed", color = "red") +
+  xlab(expression(lambda)) + ylab("Coordinates of d")
+```
+
+```{r}
+# save the coordinate path with certain requirements 
+ggsave(file = "Parkinson_FusedLasso_multi.eps", dpi = 800, width = 10, height = 4.5, limitsize = FALSE) 
+```
+
+
+
+# Analysis with 'netmeta' package
 
 ```{r}
 net = netmeta(TE, seTE, treat1, treat2, studlab, data = p1, sm = "MD", reference = "plac")
 netgraph(net)
 ```
 
--0.4099753 -0.7099753 -1.7792705 -0.3881797 ## solve(var_cov^1/2)
--0.5849614 -0.8849614 -1.7969033 -0.5262000 ## c
 
-After removing row 3 Plac vs Pram, not row 5 
--0.4678992 -0.7678992 -1.8011238 -0.4338672 ## c
--0.5237265 -0.8237265 -2.0518968 -0.4779010 ## solve(var_cov^1/2)
-
-Random approach
--0.5542771 -0.8542771 -1.7609034 -0.4439179
-
--0.5240 -0.8240 -1.8116 -0.4781 ## netmeta
 ```{r}
 # check the fixed-effect model
 fit$bls
@@ -209,42 +208,63 @@ sum$x
 ```
 
 
-netleague
+
 ```{r}
-library(writexl)
-t1 = netleague(net,net, digits = 2, 
-               seq = c("Placebo", "Ropinirole","Bromocriptine","Cabergoline","Pramipexole")) # writexl=TRUE
+# the league table with given order of treatments 
+t1 = netleague(net,net, digits = 2, seq = c("Placebo", "Ropinirole","Bromocriptine","Cabergoline","Pramipexole"))
+
+# the fix effect model
 t2 = t1$fixed
 t2
 ```
 
 ```{r}
-net = netmeta(TE, seTE, treat1, treat2, studlab, data = p1, sm = "MD", reference = "plac")
+# calculate the coefficient of variation of treatments 
+#   in the same order of the league table
+cv_t = data.frame()
+for (i in 2:nrow(t2)){
+  for (j in 1:(i-1)) {
+    a = t2[i,j]
+    # transfer the string in the league table into numbers 
+    results = league_str_num(a)
+    #print(results)
+    # calculate the cv
+    cv_t[i,j] = ((league_str_num(a)[3] - 
+                    league_str_num(a)[2])/4)/league_str_num(a)[1]
+  }
+}
+cv_t
 ```
 
+
+
 ```{r}
+# beta values of the best model under AICc
 ddd <- fit$beta[,12]
+# calculate the GFL-NMA estimates of the lowest AICc model
 outer(sort(c(0,ddd), decreasing = TRUE),sort(c(0,ddd), decreasing = TRUE),"-")
 ```
 
 
-
-
-
-
-
-rankogram
 ```{r}
+# The rankgram of the Parkinson data
+set.seed(1)
 rank_ = rankogram(net)
-plot(rank_)
-rank_$ranking.common
+rp = plot(rank_)
 ```
 
 
+```{r}
+# SUCRA values (round in 2 digits)
+round(sort(rank_$ranking.fixed),2)
+```
+
+# Save some main results for future using 
 
 ```{r}
+### RUN THIS BEFORE RELOAD THE RESULTS
 # Save multiple objects
-save(p1, pksn_multi, fit, sum_table_a, net, file = "Parkn.RData")
+save(p1, pksn_multi, fit, sum_table_a, net, cv_t, file = "Parkn.RData")
 ```
 
 
