@@ -152,19 +152,26 @@ fit = fusedlasso(y=w%*%y, X=w%*%X, graph = gr, gamma=1)
 fit$beta <- rbind(rep(0,  dim(fit$beta)[2]), fit$beta)
 fit$bls <- c(0, fit$bls)
 
-
 p_matrix<- rbind(t(fit$beta), fit$bls)
 x <- c(0, rev(fit$lambda))
 
 data <- data.frame(x = rep(x, ncol(p_matrix)), 
                    value=rev(as.numeric(p_matrix)), 
-                   treatment=rep(paste0('', rev(1:ncol(p_matrix))), each=length(x)))
+                   treatment=rep(paste0('', rev(1:ncol(p_matrix))), 
+                                 each=length(x)))
 
 best_index = which(sum_table[,2] == sub_sum[which(sub_sum$delta_AICc == 0),2])
 
+# omit lambda > 12
+data <- data[which(data$x < 12), ]
+
+# reorder the legend
+data$treatment <- factor(data$treatment, levels = c(5,8,12,11,3,2,7,9,1,6,4,10))
+
 ggplot(data = data, aes(x=x, y=value)) + 
   geom_line(aes(colour=treatment))+                            
-  geom_vline(xintercept = rev(fit$lambda[-best_index]), linetype="dashed") +
+  geom_vline(xintercept = rev(fit$lambda[-c(best_index, which(fit$lambda > 12))]),
+             linetype="dashed") +
   geom_vline(xintercept = fit$lambda[best_index], linetype="dashed", color = "red") +
   xlab(expression(lambda)) + ylab("Coordinates of d")
 ```
@@ -200,7 +207,7 @@ plot(rank_)
 
 ```{r}
 # the league table with given order of treatments 
-t1 = netleague(net, net, digits = 4, seq = order_names)
+t1 = netleague(net, net, digits = 2, seq = order_names)
 # random effect model 
 t2 = t1$random
 t2
@@ -241,8 +248,10 @@ tt
 
 # Save some main results for future using 
 
+
 ```{r}
 ### RUN THIS BEFORE RELOAD THE RESULTS
 # Save multiple objects
-save(p1, d_multi, fit, sum_table_a, net, file = "depression.RData")
+save(p1, d_multi, fit, w, sum_table_a, net, file = "depression.RData")
 ```
+
