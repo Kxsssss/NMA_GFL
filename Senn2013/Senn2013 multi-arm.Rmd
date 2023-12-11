@@ -174,9 +174,13 @@ fit$lambda <- (fit$lambda)^(1/3)
 p_matrix<- rbind(t(fit$beta), fit$bls)
 x <- c(0, rev(fit$lambda))
 
+
 data <- data.frame(x = rep(x, ncol(p_matrix)), 
                    value=rev(as.numeric(p_matrix)), 
                    treatment=rep(paste0('', rev(1:ncol(p_matrix))), each=length(x)))
+
+# reorder the legend
+data$treatment <- factor(data$treatment, levels = c(1,9,8,10,3,2,5,4,6,7))
 
 ggplot(data = data, aes(x=x, y=value)) + 
   geom_line(aes(colour=treatment))+                            
@@ -187,7 +191,7 @@ ggplot(data = data, aes(x=x, y=value)) +
 
 ```{r}
 # save the coordinate path with certain requirements 
-ggsave(file = "Senn2013_fusedLasso_multi_random.eps", dpi = 800, width = 10, height = 4.5, limitsize = FALSE) 
+ggsave(file = "Senn2013_fusedLasso_multi_random.eps", dpi = 800, width = 10, height = 4.5, limitsize = FALSE)
 ```
 
 
