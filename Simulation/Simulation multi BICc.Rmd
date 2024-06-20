@@ -1,0 +1,432 @@
+
+```{r}
+# clean the environment and 
+rm(list = ls())
+# run all helper functions
+source("../Functions.R")
+```
+
+
+```{r}
+### NEED TO RUN ALL CODE ONCE BEFORE USING
+# To load the data again
+load("Simb.RData")
+```
+
+
+```{r}
+# load the Parkinson’s dataset (more details are 
+#   given in 'ex7 multi-arm study.Rmd')
+
+# Transform data from arm-based format to contrast-based format 
+data(Franchini2012) 
+p1 <- pairwise(list(Treatment1, Treatment2, Treatment3), 
+               n = list(n1, n2, n3), mean = list(y1, y2, y3), 
+               sd = list(sd1, sd2, sd3), data = Franchini2012, studlab = Study) 
+p_study = multi_study(p1)
+
+cov_Guttman1997 = (0.6990666^2 + 0.6949881^2 - 0.7177460^2)/2
+
+pksn_multi = p1[-3, 1:5]
+```
+
+
+
+# (0,0,0,0,0)
+```{r}
+bb = rep(0, 4)
+X = X_matrix(pksn_multi$treat1, pksn_multi$treat2, ref = "Placebo", n = 5)
+set.seed(1)
+# simulti_p_BICc(X, bb, fac), more information is given in 'Function.R'
+sim_sum0_0.1_b = simulti_p_bicc(X, bb, 0.1)
+sim_sum0_1_b = simulti_p_bicc(X, bb, 1)
+sim_sum0_10_b = simulti_p_bicc(X, bb, 10)
+```
+
+```{r}
+# summary of each simulation results 
+#   more information is given in 'Function.R'
+ps01b = prob_sum(sim_sum0_0.1_b)
+ps02b = prob_sum(sim_sum0_1_b)
+ps03b = prob_sum(sim_sum0_10_b)
+ps01b
+ps02b 
+ps03b
+```
+
+
+
+
+
+
+# (0,0.5,1,3,5)
+```{r}
+bb1 = c(0.5, 1, 3, 5)
+X = X_matrix(pksn_multi$treat1, pksn_multi$treat2, ref = "Placebo", 
+              n = 5)
+set.seed(1)
+sim_sum1_0.1b = simulti_p_bicc(X, bb1, 0.1)
+sim_sum1_1b = simulti_p_bicc(X, bb1, 1)
+sim_sum1_10b = simulti_p_bicc(X, bb1, 10)
+```
+
+```{r}
+# summary of each simulation results 
+#   more information is given in 'Function.R'
+ps11b = prob_sum(sim_sum1_0.1b)
+ps12b = prob_sum(sim_sum1_1b)
+ps13b = prob_sum(sim_sum1_10b)
+ps11b
+ps12b
+ps13b
+```
+
+
+# (0,1,1,-2,-2)
+```{r}
+bb2 = c(1,1,-2,-2)
+X = X_matrix(pksn_multi$treat1, pksn_multi$treat2, ref = "Placebo", 
+              n = 5)
+set.seed(1)
+sim_sum2_0.1b = simulti_p_bicc(X, bb2, 0.1)
+sim_sum2_1b = simulti_p_bicc(X, bb2, 1)
+sim_sum2_10b = simulti_p_bicc(X, bb2, 10)
+```
+
+```{r}
+# summary of each simulation results 
+#   more information is given in 'Function.R'
+ps21b = prob_sum(sim_sum2_0.1b)
+ps22b = prob_sum(sim_sum2_1b)
+ps23b = prob_sum(sim_sum2_10b)
+
+ps21b
+ps22b
+ps23b
+```
+
+
+
+
+
+
+
+# (0,1,1,1,-2)
+```{r}
+bb3 = c(1,1,1,-2)
+X = X =  X_matrix(pksn_multi$treat1, pksn_multi$treat2, ref = "Placebo", 
+              n = 5)
+set.seed(1)
+sim_sum3_0.1b = simulti_p_bicc(X, bb3, 0.1)
+sim_sum3_1b = simulti_p_bicc(X, bb3, 1)
+sim_sum3_10b = simulti_p_bicc(X, bb3, 10)
+```
+
+```{r}
+# summary of each simulation results 
+#   more information is given in 'Function.R'
+ps31b = prob_sum(sim_sum3_0.1b)
+ps32b = prob_sum(sim_sum3_1b)
+ps33b = prob_sum(sim_sum3_10b)
+ps31b
+ps32b
+ps33b
+```
+
+```{r}
+# select 'yes' path check for all 12 categories
+
+# (0,0,0,0), (0.5,1,3,5) cases 
+graph_t = data.frame(rbind(cbind(delta_BICc = sim_sum0_0.1_b$delta_BICc, 
+                                 group = rep("(0,0,0,0) & 0.1", 1000)),
+                cbind(delta_BICc = sim_sum0_1_b$delta_BICc, 
+                      group = rep("(0,0,0,0) & 1", 1000)),
+                cbind(delta_BICc = sim_sum0_10_b$delta_BICc, 
+                      group = rep("(0,0,0,0) & 10", 1000)),
+                cbind(delta_BICc = sim_sum1_0.1b$delta_BICc, 
+                      group = rep("(0.5,1,3,5) & 0.1", 1000)),
+                cbind(delta_BICc = sim_sum1_1b$delta_BICc, 
+                      group = rep("(0.5,1,3,5) & 1", 1000)),
+                cbind(delta_BICc = sim_sum1_10b$delta_BICc, 
+                      group = rep("(0.5,1,3,5) & 10", 1000))))
+
+# (1,1,-2,-2) (1,1,1,-2) cases
+s201 = which(sim_sum2_0.1b$path_indicator == "yes")
+s21 = which(sim_sum2_1b$path_indicator == "yes")
+s210 = which(sim_sum2_10b$path_indicator == "yes")
+s301 = which(sim_sum3_0.1b$path_indicator == "yes")
+s31 = which(sim_sum3_1b$path_indicator == "yes")
+s310 = which(sim_sum3_10b$path_indicator == "yes")
+
+graph_t = rbind(graph_t, 
+                cbind(delta_BICc = sim_sum2_0.1b[s201,]$delta_BICc, 
+                      group = rep("(1,1,-2,-2) & 0.1", length(s201))),
+                cbind(delta_BICc = sim_sum2_1b[s21,]$delta_BICc, 
+                      group = rep("(1,1,-2,-2) & 1", length(s21))),
+                cbind(delta_BICc = sim_sum2_10b[s210,]$delta_BICc, 
+                      group = rep("(1,1,-2,-2) & 10", length(s210))),
+                cbind(delta_BICc = sim_sum3_0.1b[s301,]$delta_BICc, 
+                      group = rep("(1,1,1,-2) & 0.1", length(s301))),
+                cbind(delta_BICc = sim_sum3_1b[s31,]$delta_BICc, 
+                      group = rep("(1,1,1,-2) & 1", length(s31))),
+                cbind(delta_BICc = sim_sum3_10b[s310,]$delta_BICc, 
+                      group = rep("(1,1,1,-2) & 10", length(s310))))
+
+# according to the thumb rule, group data according to delta BICc values 
+graph_t$interval = rep(1, nrow(graph_t))
+graph_t$delta_BICc = as.numeric(graph_t$delta_BICc)
+for (i in 1:nrow(graph_t)) {
+  if(graph_t[i,]$delta_BICc == 0){graph_t[i, ]$interval = "0"} else
+    if(0 < abs(graph_t[i,]$delta_BICc) & abs(graph_t[i,]$delta_BICc) <= 2){
+      graph_t[i,]$interval = "0-2"
+      } else if(2 < abs(graph_t[i,]$delta_BICc) & abs(graph_t[i,]$delta_BICc) <= 4){
+        graph_t[i,]$interval = "2-4"
+        }else if(4 < abs(graph_t[i,]$delta_BICc) & abs(graph_t[i,]$delta_BICc) <= 7){
+          graph_t[i,]$interval = "4-7"
+          }else if(7 < abs(graph_t[i,]$delta_BICc) & abs(graph_t[i,]$delta_BICc) <= 10){
+            graph_t[i,]$interval = "7-10"
+            }else{
+              graph_t[i,]$interval = ">10"
+              }
+}
+graph_t$group = as.factor(graph_t$group)
+graph_t$interval = as.factor(graph_t$interval )
+```
+
+```{r}
+# combine variables above into a table 
+plotdata <- graph_t %>%
+  group_by(group, interval) %>%
+  summarize(n = n()) %>% 
+  mutate(pct = n/sum(n),
+         lbl = scales::percent(pct, digits = 1))
+plotdata
+```
+
+```{r}
+# plot the percentages of each intervals within different groups 
+ggplot(plotdata, 
+       aes(x = factor(group,
+                      levels = levels(graph_t$group)),
+           y = pct,
+           fill = factor(interval, 
+                         levels = c("0", "0-2", "2-4", "4-7", "7-10", ">10"),
+                         labels = paste0('|delta BICc| ', 
+                                         c( "= 0", "in (0, 2]", "in (2, 4]", "in (4, 7]",
+                                            "in (7, 10]", "> 10")) ))) + 
+  geom_bar(stat = "identity",
+           position = "fill") +
+  scale_y_continuous(breaks = seq(0, 1, .2), 
+                     label = percent) +
+  geom_text(aes(label = lbl), 
+            size = 3, 
+            position = position_stack(vjust = 0.5)) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(y = "Percent", 
+       fill = "Intervals:",
+       x = "Group of d' with multiplier") +
+  theme_minimal() +
+  theme(legend.position="top", 
+        axis.text.x = element_text(angle = 90, size=12),
+        axis.title.y = element_text(size = 12))
+```
+
+
+
+
+```{r}
+# draw the graph in a 3 x 4 format
+par(mfrow=c(3,4))
+# combine all the summmary tables into one list 
+dat_list = list(sim_sum0_0.1_b, sim_sum1_0.1b, sim_sum2_0.1b, sim_sum3_0.1b,
+                sim_sum0_1_b, sim_sum1_1b, sim_sum2_1b, sim_sum3_1b,
+                sim_sum0_10_b, sim_sum1_10b, sim_sum2_10b, sim_sum3_10b)
+# titles of each plot
+dat_titles = c("(0,0,0,0) & 0.1", "(0.5,1,3,5) & 0.1", "(1,1,-2,-2) & 0.1", "(1,1,1,-2) & 0.1", 
+               "(0,0,0,0) & 1", "(0.5,1,3,5) & 1", "(1,1,-2,-2) & 1", "(1,1,1,-2) & 1",
+               "(0,0,0,0) & 10", "(0.5,1,3,5) & 10", "(1,1,-2,-2) & 10", "(1,1,1,-2) & 10")
+
+rmse_f = data.frame()
+
+for (i in 1:length(dat_list)){
+  # calculate rmse of the full model and the model that has the smallest BICc
+  rmse_full = sqrt(apply(dat_list[[i]][22:31], 2, sum)/1000)
+  rmse_best = sqrt(apply(dat_list[[i]][32:41], 2, sum)/1000)
+  tit = dat_titles[i]
+  
+  # create a table for rmse, each row represents a simulation
+  rmse_f = data.frame(matrix(round(rmse_full, 4), ncol = 1))
+  colnames(rmse_f) = tit
+  
+  rmse_f$Colour="gray45"
+  # treatment comparisons that include the reference treatment
+  rmse_f$Colour[1:4]="black"
+  
+  # different graph size for different multipliers
+  if(i<=4){
+    plot(rmse_full, rmse_best, xlab = "RMSE of Full Model", ylab = "RMSE of Best Model",
+         xlim=c(0, sqrt(0.004)), 
+         ylim=c(0, sqrt(0.004)),
+         col = rmse_f$Colour)
+  }else if(i<=8){
+    plot(rmse_full, rmse_best, xlab = "RMSE of Full Model", ylab = "RMSE of Best Model",
+         xlim=c(0,sqrt(0.75)), 
+         ylim=c(0, sqrt(0.75)),
+         col = rmse_f$Colour)
+  }else{
+    plot(rmse_full, rmse_best, xlab = "RMSE of Full Model", ylab = "RMSE of Best Model",
+         xlim=c(0, 6.5), 
+         ylim=c(0, 6.5),
+         col = rmse_f$Colour)
+  }
+  title(paste(tit))
+  # add the y=x line for comparison 
+  abline(0,1, col = "red")
+}
+
+#colnames(rmse_t)[c(2:11)] = c("1-2","1-3", "1-4", "1-5", "2-3",
+#                             "2-4", "2-5", "3-4", "3-5", "4-5")
+```
+
+# Some extra code that is not included in the paper
+
+```{r}
+#### NOT INCLUDED IN THE PAPER
+# draw the graph in a 3 x 4 format
+par(mfrow=c(3,4))
+
+# combine all the summmary tables into one list 
+dat_list = list(sim_sum0_0.1_b, sim_sum1_0.1b, sim_sum2_0.1b, sim_sum3_0.1b,
+                sim_sum0_1_b, sim_sum1_1b, sim_sum2_1b, sim_sum3_1b,
+                sim_sum0_10_b, sim_sum1_10b, sim_sum2_10b, sim_sum3_10b)
+# titles of each plot
+dat_titles = c("(0,0,0,0) & 0.1", "(0.5,1,3,5) & 0.1", "(1,1,-2,-2) & 0.1", "(1,1,1,-2) & 0.1", 
+               "(0,0,0,0) & 1", "(0.5,1,3,5) & 1", "(1,1,-2,-2) & 1", "(1,1,1,-2) & 1",
+               "(0,0,0,0) & 10", "(0.5,1,3,5) & 10", "(1,1,-2,-2) & 10", "(1,1,1,-2) & 10")
+
+rmse_t = data.frame()
+
+for (i in 1:length(dat_list)){
+  # calculate rmse of the full model and the model that has the smallest BICc
+  rmse_full = sqrt(apply(dat_list[[i]][22:31], 2, sum)/1000)
+  rmse_best = sqrt(apply(dat_list[[i]][32:41], 2, sum)/1000)
+  tit = dat_titles[i]
+  
+  # create a table for rmse, each row represents a simulation
+  rmse_t = rbind(rmse_t, cbind(tit, matrix(round(rmse_full, 4), nrow = 1)))
+  rmse_t = rbind(rmse_t, cbind(tit = "", matrix(round(rmse_best, 4), nrow = 1)))
+  
+  # different graph size for different multipliers
+  if(i<=4){
+    plot(rmse_full, rmse_best, xlab = "RMSE of Full Model", ylab = "RMSE of Best Model",
+         xlim=c(0, sqrt(0.004)), 
+         ylim=c(0, sqrt(0.004)))
+    text(rmse_full[1:4], rmse_best[1:4]-0.0002, labels=c("1-2","1-3", "1-4", "1-5"))
+  }else if(i<=8){
+    plot(rmse_full, rmse_best, xlab = "RMSE of Full Model", ylab = "RMSE of Best Model",
+         xlim=c(0,sqrt(0.75)), 
+         ylim=c(0, sqrt(0.75)))
+    text(rmse_full[1:4], rmse_best[1:4]-0.05, labels=c("1-2","1-3", "1-4", "1-5"))
+  }else{
+    plot(rmse_full, rmse_best, xlab = "RMSE of Full Model", ylab = "RMSE of Best Model",
+         xlim=c(0, 6.5), 
+         ylim=c(0, 6.5))
+    text(rmse_full[1:4], rmse_best[1:4]-1, labels=c("1-2","1-3", "1-4", "1-5"))
+  }
+  title(paste(tit))
+  # add the y=x line
+  abline(0,1, col = "red")
+}
+
+colnames(rmse_t)[c(2:11)] = c("1-2","1-3", "1-4", "1-5", "2-3",
+                             "2-4", "2-5", "3-4", "3-5", "4-5")
+
+```
+
+
+```{r}
+#### NOT INCLUDED IN THE PAPER
+par(mfrow=c(3,1))
+# combine three summary tables in one list 
+dat_list = list( sim_sum1_0.1b,sim_sum1_1b, sim_sum1_10b)
+dat_titles = c("(0.5,1,3,5) & 0.1", "(0.5,1,3,5) & 1", "(0.5,1,3,5) & 10")
+
+rmse_t = data.frame()
+
+for (i in 1:length(dat_list)){
+  # calculate rmse of the full model and the smallest BICc model
+  rmse_full = sqrt(apply(dat_list[[i]][22:31], 2, sum)/1000)
+  rmse_best = sqrt(apply(dat_list[[i]][32:41], 2, sum)/1000)
+  tit = dat_titles[i]
+  
+  # create a table for rmse, each row represents a simulation
+  rmse_t = rbind(rmse_t, cbind(tit, matrix(round(rmse_full, 4), nrow = 1)))
+  rmse_t = rbind(rmse_t, cbind(tit = "", matrix(round(rmse_best, 4), nrow = 1)))
+  
+  # different graphs have different size
+  if(i == 1){
+    plot(rmse_full, rmse_best, xlab = "MSE of Full Model", ylab = "MSE of Best Model",
+         xlim=c(0, sqrt(0.004)), 
+         ylim=c(0, sqrt(0.004)))
+    text(rmse_full[1:4], rmse_best[1:4]-0.0002, labels=c("1-2","1-3", "1-4", "1-5"))
+  }else if(i==2){
+    plot(rmse_full, rmse_best, xlab = "MSE of Full Model", ylab = "MSE of Best Model",
+         xlim=c(0,sqrt(0.75)), 
+         ylim=c(0, sqrt(0.75)))
+    text(rmse_full[1:4], rmse_best[1:4]-0.05, labels=c("1-2","1-3", "1-4", "1-5"))
+  }else{
+    plot(rmse_full, rmse_best, xlab = "MSE of Full Model", ylab = "MSE of Best Model",
+         xlim=c(0, 6.5), 
+         ylim=c(0, 6.5))
+    text(rmse_full[1:4], rmse_best[1:4]-1, labels=c("1-2","1-3", "1-4", "1-5"))
+  }
+  title(paste(tit))
+  abline(0,1, col = "red")
+}
+
+colnames(rmse_t)[c(2:11)] = c("1-2","1-3", "1-4", "1-5", "2-3",
+                             "2-4", "2-5", "3-4", "3-5", "4-5")
+
+```
+
+
+```{r}
+#### NOT INCLUDED IN THE PAPER
+rmse_full = sim_sum1_1b[,42]
+rmse_best = sim_sum1_1b[,43]
+rmse_full1 = sim_sum1_1b[,25]
+rmse_best1 = sim_sum1_1b[,35]
+par(mfrow=c(2,2))
+boxplot(rmse_full, main = "Full model - estimated 1-5")
+boxplot(rmse_best, main = "Best model - estimated 1-5")
+boxplot(rmse_full1, main = "Full model - difference^2 1-5")
+boxplot(rmse_best1, main = "Best model - difference^2 1-5")
+```
+```{r}
+#### NOT INCLUDED IN THE PAPER
+hist(rmse_best)
+hist(rmse_full)
+```
+
+
+
+
+
+
+
+
+# Save some main results for future using 
+
+```{r}
+### RUN THIS BEFORE RELOAD THE RESULTS
+# Save multiple objects
+save(sim_sum0_0.1_b, sim_sum0_1_b,sim_sum0_10_b, ps01b, ps02b, ps03b,
+     sim_sum1_0.1b, sim_sum1_1b,sim_sum1_10b, ps11b, ps12b, ps13b,
+     sim_sum2_0.1b, sim_sum2_1b,sim_sum2_10b, ps21b, ps22b, ps23b,
+     sim_sum3_0.1b, sim_sum3_1b,sim_sum3_10b, ps31b, ps32b, ps33b,
+     graph_t, file = "Simb.RData")
+```
+
+
+
+
