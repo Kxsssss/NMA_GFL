@@ -4,6 +4,7 @@
 rm(list = ls())
 # run all helper functions
 source("../Functions.R")
+source("../sim_helper.R")
 ```
 
 ```{r}
@@ -82,13 +83,7 @@ X =  X_matrix(d_multi$treat1, d_multi$treat2, ref = "fluoxetine",
 n = length(y)
 K = ncol(X)
 
-e = c()
-for (i in 1:11){
-  for (j in (i + 1):11){
-    e = append(e, c(i, j))
-  }
-}
-e = head(e, -4)
+e = n_treats_graph_generator(12)
 gr = graph(e, directed=FALSE)
 
 plot(gr)
@@ -107,7 +102,7 @@ fusedLasso_gr(fit)
 # from general code, step-by-step shown in the general file 
 rss = summary(fit)[,3]
 Ks = summary(fit)[,1]
-beta = fit$beta[, best_row(rss, Ks)]
+beta = fit$beta[, best_row_aic(rss, Ks)]
 
 # Calculate the rss for the full model 
 mod = glm(w%*%y ~ w%*%X - 1)
@@ -140,7 +135,7 @@ rownames(sub_sum) = 1:(K + 1)
 # add delta_AIC
 ref = min(sub_sum$AICc)
 sub_sum$delta_AICc = sub_sum$AICc - ref
-round(sub_sum,3)
+round(sub_sum,1)
 ```
 
 
@@ -254,4 +249,114 @@ tt
 # Save multiple objects
 save(p1, d_multi, fit, w, sum_table_a, net, file = "depression.RData")
 ```
+
+
+# Pooled GFL-NMA
+```{r}
+###Code for pooled GFL-NMA###
+rss = summary(fit)[,3]
+Ks = summary(fit)[,1]
+beta = fit$beta[, best_row_aic(rss, Ks)]
+
+# Calculate the rss for the full model 
+mod = glm(w%*%y ~ w%*%X - 1)
+rss_full = deviance(mod)
+
+# update variables 
+rss = c(rss, rss_full)
+Ks = c(Ks, K)
+
+# adding the full model to the summary
+sum_table = rbind(summary(fit), c(K, 0, rss_full))
+
+# Add corresponding AICc values into the table 
+sum_table_a = data.frame(cbind(sum_table, AICc = AICc_rss(rss, Ks, n)))
+rownames(sum_table_a) = 1:nrow(sum_table_a)
+min_row = max(which(sum_table_a$AICc == min(sum_table_a$AICc)))
+
+
+best_beta = fit$beta[, min_row]
+t_group_list = group_dd(best_beta)
+
+# replace the string names by num
+deprn = p1[,1:5]
+seq = c("fluoxetine", "bupropion", "citalopram", "duloxetine", "escitalopram",
+        "fluvoxamine", "milnacipran", "mirtazapine", "paroxetine", "reboxetine",
+        "sertraline", "venlafaxine")
+deprn_ = data.frame(cbind(TE = deprn$TE, seTE = deprn$seTE,
+                   studlab = factor(deprn$studlab, labels = 1:111),
+                   t1 = match(deprn$treat1,seq), t2 = match(deprn$treat2,seq)))
+
+update = deprn_
+
+# rename treatments that are pooled as the smallest number in the group
+for (k in 1:length(t_group_list)){
+  # change t1
+  c1 = sapply(deprn_$t1, contains, y = t_group_list[[k]])
+  if(any(c1)){
+    update$t1[which(c1)] = min(t_group_list[[k]])
+  }
+  # change t2
+  c2 = sapply(deprn_$t2, contains, y = t_group_list[[k]])
+  if(any(c2)){
+    update$t2[which(c2)] = min(t_group_list[[k]])
+  }
+}
+
+# drop rows that compare the same treatments (t1=t2) if any
+if(length(which(update$t1 == update$t2))>0){
+  update = update[-which(update$t1 == update$t2),]
+}
+
+net_i = netmeta(TE, seTE, t1, t2, studlab,data = update, sm = "MD", reference = 1)
+group_i = t_group_list
+
+############## print the result 
+## TE+CI but partial
+t1 = netleague(net_i,net_i, digits = 3, seq = c("5","8","11","3","2","1","6","10"))
+t = t1$random
+t
+
+## one result (TE or lower or upper) per output but full
+N.treat = 12
+smry = summary(net_i)
+# est: estimated treatment effects 
+est = t_vs_ref(smry$random$TE, N.treat, group_i)
+
+
+# print the estimated values (TE or corresponding 95% CI)
+full_lower = data.frame(matrix(rep(0, N.treat*N.treat), nrow = N.treat))
+rownames(full_lower) = colnames(full_lower) = 1:N.treat
+# change smry$random$... to change the type of values 
+row_names = as.numeric(rownames(data.frame(smry$random$upper)))
+
+row_group_num = 0
+for (row in 1:N.treat) {
+  for (subgroup in group_i) {
+    if(row %in% subgroup){row_group_num = min(subgroup)}
+  }
+  # no pooled group
+  if(row_group_num == 0){row_group_num = row}
+  col_group_num = 0
+  for (col in 1:N.treat) {
+    for (subgroup in group_i) {
+      if(col %in% subgroup){col_group_num = min(subgroup)}
+    }
+    if(col_group_num == 0){col_group_num = col}
+    
+    c1=which(row_names == row_group_num)
+    c2=which(row_names == col_group_num)
+    
+    full_lower[row,col] = smry$random$upper[c1,c2]
+    col_group_num = 0
+  }
+  row_group_num = 0
+}
+t1 = full_lower[c(5,8,12,11,3,2,7,9,1,6,4,10),c(5,8,12,11,3,2,7,9,1,6,4,10)]
+t2 = round(t1,2)*100
+diag(t2) = c(5555,8888,1212,111111,3333,2222,7777,9999,1111,6666,4444,1010)
+t2
+```
+
+
 
