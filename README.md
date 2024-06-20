@@ -1,5 +1,7 @@
 # NMA_GFL
-File 'Functions.R' includes all helper functions. 
+File 'Functions.R' includes helper functions for the main analyses. 
+
+File 'sim_helper.R' includes helper functions for the simulations. 
 
 Folder 'Senn2013' includes coding based on the Diabetes Dataset. 
 
