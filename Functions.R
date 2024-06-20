@@ -12,15 +12,18 @@ library(gemtc)
 
 
 ###### helper functions 
+contains <- function(x,y) {
+  x %in% y
+}
 
 # Formula to calculate AICc by given rss
 AICc_rss = function(rss, K, n){
-  2 * K + n * log(rss/n) + 2 * K *(K + 1)/(n - K - 1) 
+  2 * K + rss + 2 * K *(K + 1)/(n - K - 1) 
 }
 
 # Formula to calculate BICc by given rss
 BICc_rss = function(rss, K, n){
-  log(n) * K + n * log(rss/n) + 2 * K *(K + 1)/(n - K - 1) 
+  log(n) * K + rss + 2 * K *(K + 1)/(n - K - 1) 
 }
 
 
@@ -61,7 +64,34 @@ fusedLasso_gr_cubic = function(fit){
 #        length(rss) = total number of rows
 #   K: number of model parameters; same length as `rss`
 
-best_row = function(rss, Ks, n){
+best_row_aic = function(rss, Ks, n){
+  best_value = NA
+  row = 0
+  # total number of rows
+  n = length(rss)
+  for (i in 1:n){
+    K = Ks[i]
+    AICc = AICc_rss(rss[i], K, n) 
+    # first round
+    if (is.na(best_value)){
+      best_value = AICc
+      row = i
+    } else if (AICc < best_value){
+      best_value = AICc
+      row = i
+    }
+  }
+  row
+}
+
+
+
+# Return the row that have the smallest BICc
+#   rss: residual sum of square; 
+#        length(rss) = total number of rows
+#   K: number of model parameters; same length as `rss`
+
+best_row_bic = function(rss, Ks, n){
   best_value = NA
   row = 0
   # total number of rows
@@ -82,9 +112,11 @@ best_row = function(rss, Ks, n){
 }
 
 
+
 # Return a matrix X with 
 #   nrow = length(treatment1), ncol = length(total_levels)
 #   according to the contrast-based info
+# Treatments 1,2 and ref names given in string form
 X_matrix = function(treatment1, treatment2, ref, n) {
   
   # factorize the treatment
@@ -117,6 +149,39 @@ X_matrix = function(treatment1, treatment2, ref, n) {
   
   return(X)
 }
+
+
+# Return a matrix X with (number of studies) x (number of treatments)
+#   Treatments 1,2 and ref names given in int or double form
+X_matrix_num <- function(t1, t2, ref, n){
+  X = matrix(0, nrow = length(t1), ncol = n)
+  for (i in 1:nrow(X)){
+    X[i, c(t1[i], t2[i])] = c(1, -1)
+  }
+  colnames(X) = seq(1, n, 1)
+  X = X[, -ref]
+  X
+}
+
+
+# Given total number of distinct treatments, return the corresponding 
+#   vector to draw the fully connected graph.
+#   i.e given n = 5, it will return c(1,2,1,3,1,4,2,3,2,4,3,4)
+
+n_treats_graph_generator <- function(n){
+  if(n <= 2) {return(1)}
+  
+  n = n - 1
+  e = c()
+  for (i in 1:n){
+    for (j in (i + 1):n){
+      e = append(e, c(i, j))
+    }
+  }
+  e = head(e, -4)
+  e
+}
+
 
 
 # Return the study that is multi-arm
@@ -282,7 +347,7 @@ simulti_p_aicc <- function(X, bb, fac){
     ### df, lambda, rss, AICc
     rss = summary(fit)[,3]
     Ks = summary(fit)[,1]
-    beta = fit$beta[, best_row(rss, Ks, n)]
+    beta = fit$beta[, best_row_aic(rss, Ks, n)]
     # Calculate the rss for the full model 
     mod = glm(w%*%y ~ w%*%X - 1)
     rss_full = deviance(mod)
@@ -423,4 +488,178 @@ simulti_p_aicc <- function(X, bb, fac){
   sim_sum
 }
 
+
+
+
+simulti_p_bicc <- function(X, bb, fac){
+  ### e
+  # generate 1000 epsilon
+  size = 1000                                      
+  meanvector = rep(0, nrow(X))                                 
+  # matrix with all var on diagonal
+  var_cov = diag((pksn_multi$seTE*fac)^2)
+  # find the indexes that stands for multi-arm 
+  multi_index = which(pksn_multi$studlab == unique(as.vector(p_study$studlab)))
+  # update the cov terms in the var_cov matrix 
+  var_cov[multi_index[1],multi_index[2]] = cov_Guttman1997 * (fac^2)
+  var_cov[multi_index[2],multi_index[1]] = cov_Guttman1997 * (fac^2)
+  e <- mvrnorm(n = size, mu = meanvector, Sigma = var_cov)
+  
+  ### y
+  y_ = matrix(rep(as.numeric(X %*% bb), 1000), ncol = nrow(X), byrow=TRUE) + e
+  
+  sim_sum = data.frame()
+  for (i in 1:1000) {
+    y = y_[i,]
+    n = length(y)
+    K = ncol(X)
+    # Choleski Decomposition of var_cov matrix
+    w = chol(solve(var_cov))
+    gr <- graph(c(1,2,1,3,1,4,2,3,2,4,3,4), directed=FALSE)
+    fit = fusedlasso(y=w%*%y, X=w%*%X, graph = gr, gamma=1)
+    # fusedLasso_gr(fit) (graph code)
+    
+    ### df, lambda, rss, BICc
+    rss = summary(fit)[,3]
+    Ks = summary(fit)[,1]
+    beta = fit$beta[, best_row_bic(rss, Ks, n)]
+    # Calculate the rss for the full model 
+    mod = glm(w%*%y ~ w%*%X - 1)
+    rss_full = deviance(mod)
+    # update variables 
+    rss = c(rss, rss_full)
+    Ks = c(Ks, K)
+    # adding the full model to the summary
+    sum_table = rbind(summary(fit), c(K, 0, rss_full))
+    # Add corresponding BICc values into the table 
+    sum_table_a = data.frame(cbind(sum_table, BICc = BICc_rss(rss, Ks, n)))
+    rownames(sum_table_a) = 1:nrow(sum_table_a)
+    
+    
+    # based on each case, give the correct df
+    #   (0,0,0,0), all same, correct df = 0
+    #   (0.5,1,3,5), all diff, correct df = 4
+    #   (1,1,-2,-2), correct df = 2
+    #   (1,1,1,-2), correct df = 1
+    if (all(bb == rep(0, 4))){correct_df = 0}
+    if (all(bb == c(0.5,1,3,5))){correct_df = 4}
+    if (all(bb == c(1,1,-2,-2))){correct_df = 2}
+    if (all(bb == c(1,1,1,-2))){correct_df = 2}
+    
+    #### delta_BIC 
+    #   (the difference between the correct model and the selected one)
+    # if df = 0 gives the smallest BICc, then only the smallest lambda is added
+    select_index = max(which(sum_table_a$BICc == min(sum_table_a$BICc)))
+    select = sum_table_a[select_index,]
+    # under the correct df, find the one that has the smallest BICc 
+    df_index = which(sum_table_a$df == correct_df)
+    df_rows = sum_table_a[df_index,]
+    correct = df_rows[max(which(df_rows$BICc == min(df_rows$BICc))),]
+    delta_BICc = abs(select$BICc - correct$BICc)
+    
+    #### Path check
+    # based on each case, give the correct pooling pairs
+    if (all(bb == c(0.5,1,3,5))){cpair = c()}
+    if (all(bb == c(1,1,-2,-2))){cpair = c(23, 45)}
+    if (all(bb == c(1,1,1,-2))){cpair = c(23, 24, 34)}
+    # under correct df, see if there exist a model that has correct path
+    # path indicator (path_indicator) is set to be no as default
+    path_indicator = "no"
+    if (correct_df == 0 | correct_df == 4){path_indicator = "yes"}
+    # (1,1,-2,-2)
+    if (all(bb == c(1,1,-2,-2))){
+      j = 1
+      while (path_indicator == "no" & j <= length(df_index)) {
+        pool_pairs_model = pairwise_pool_names(df_index[j], fit)
+        #print(i)
+        #print(pool_pairs_model)
+        if (length(pool_pairs_model) == 2){
+          if (all(pool_pairs_model == cpair)){path_indicator = "yes"}
+        }
+        j = j + 1
+      }
+    }
+    # (1,1,1,-2)
+    if (all(bb == c(1,1,1,-2))){
+      j = 1
+      while (path_indicator == "no" & j <= length(df_index)) {
+        pool_pairs_model = pairwise_pool_names(df_index[j], fit)
+        #print(i)
+        #print(pool_pairs_model)
+        if (length(pool_pairs_model) == 3){
+          if (all(pool_pairs_model == cpair)){path_indicator = "yes"}
+        }
+        j = j + 1
+      }
+    }
+    
+    
+    ### false pooling within the best model 
+    pair_values = rep(0, 10)
+    names = c(12, 13, 14, 15, 23, 24, 25, 34, 35, 45)
+    pool_best = pairwise_pool_names(select_index, fit)
+    # indicator of FP, default is no, which means no FP
+    best_indicator = "no"
+    if (correct_df == 0){
+      best_indicator = "no"
+    }else if (correct_df == 4){
+      if (!is.null(pool_best)){best_indicator = "yes"}
+    }else{
+      ss = append(cpair, pool_best)
+      # if further pooling are there compared to the correct pairs
+      if (length(unique(ss)) > length(cpair)) {best_indicator = "yes"}
+    }
+    # update 1-2 1-3 1-4 1-5 2-3 2-4 2-5 3-4 3-5 4-5
+    for (k in pool_best){
+      pair_values[which(names == k)] = 1
+    }
+    pair_values = matrix(pair_values, nrow = 1)
+    
+    
+    
+    ### (estimated dd - true dd)^2 for best model and full model 
+    # true values 
+    true_dd = gene_dd(bb)
+    # full model 
+    esti_full = gene_dd(as.vector(coef(mod)))
+    full_diff2 = matrix((true_dd - esti_full)^2, nrow = 1)
+    # best model 
+    if (select_index == nrow(sum_table_a)){ #full model is selected
+      best_diff2 = full_diff2
+    }else{
+      esti_best = gene_dd(fit$beta[,select_index])
+      best_diff2 = matrix((true_dd - esti_best)^2, nrow = 1)
+    }
+    
+    ########## check 1-5
+    est_full_1_5 = as.vector(coef(mod))[4]
+    if (select_index == nrow(sum_table_a)){ #full model is selected
+      est_best_1_5 = est_full_1_5
+    }else{
+      est_best_1_5 = fit$beta[,select_index][4]
+    }
+    
+    real_1_5 = bb[4]
+    
+    
+    
+    # add the row that has the smallest BICc values into the summary table
+    sim_sum = rbind(sim_sum, 
+                    cbind(select, correct, delta_BICc, path_indicator, 
+                          best_indicator, pair_values, full_diff2, best_diff2,
+                          est_full_1_5, est_best_1_5, real_1_5))
+    if(i%%200==0){print(i)}
+  }
+  rownames(sim_sum) = 1:nrow(sim_sum)
+  colnames(sim_sum)[c(1, 5)] = c("select_df", "correct_df")
+  colnames(sim_sum)[c(12:21)] = c("1-2_poll","1-3", "1-4", "1-5", "2-3", "2-4",
+                                  "2-5", "3-4", "3-5", "4-5_poll")
+  colnames(sim_sum)[c(22:31)] = c("1-2_full","1-3", "1-4", "1-5", "2-3", "2-4",
+                                  "2-5", "3-4", "3-5", "4-5_full")
+  colnames(sim_sum)[c(32:41)] = c("1-2_best","1-3", "1-4", "1-5", "2-3", "2-4",
+                                  "2-5", "3-4", "3-5", "4-5_best")
+  
+  
+  sim_sum
+}
 
