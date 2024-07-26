@@ -1,0 +1,1222 @@
+
+```{r}
+# clean the environment and 
+rm(list = ls())
+# run all helper functions
+source("../Functions.R")
+source("../sim_helper.R")
+source("../rankogram.R")
+setwd("~/Desktop/codes for examples/Simulation")
+```
+
+```{r}
+environment(rankogram_plus) <- asNamespace('netmeta')
+assignInNamespace("rankogram", rankogram_plus, ns = "netmeta")
+environment(ranksampling_plus) <- asNamespace('netmeta')
+```
+
+
+```{r}
+##### SCENARIO A.2 ##############
+N.sim = 1000
+set.seed(42)
+
+group=list()
+net=list()
+
+#### 10 treatments, no treatment effects in the network, fullz connected network, homogeneity
+N.treat=10
+N.studies.comp=1 # studies per comparison
+data1=list()
+
+#define the treatments in the studies
+t1=c()
+t2=c()
+for (i in 1:(N.treat-1)){
+  for (k in (i+1):N.treat){
+    for(j in 1:N.studies.comp){
+      t1=c(t1,i)
+      t2=c(t2,k)      }}}
+N.stud=length(t1)
+
+
+for (i in 1:N.sim){
+  if(i%%200==0){print(i)}
+  seTE=c(rep(0,N.stud))
+  TE=0
+  data1[[i]]=data.frame(TE,seTE)
+  data1[[i]]$seTE=0.2*rchisq(N.stud,df=1)+0.5
+  data1[[i]]$TE=rnorm(N.stud,0,data1[[i]]$seTE)
+  data1[[i]]$studlab=c(1:(N.stud))
+  data1[[i]]$t1=t1
+  data1[[i]]$t2=t2
+#}  
+  ### NMA model after GFL model selection and pooled groups
+  results = GLF_aicc_2arm(data1[[i]], N.treat)
+  group[[i]] = results[[1]]
+  net[[i]] = results[[2]]
+}
+
+save(data1, group, net, file = "A2.RData")
+```
+
+```{r}
+load("A2.RData")
+```
+
+```{r}
+# define result variables
+mae = c()
+mb = c()
+SSresults = c()
+diff_bw = c()
+bw_sd = c()
+diff_br = c()
+br_sd = c()
+n_full = 0
+
+for (i in 1:N.sim){ 
+  group_i = group[[i]]
+  net_i = net[[i]]
+  
+  # if none or some of the treatments are pooled
+  if(typeof(net_i)=="list"){
+    #if not pooling any treatments, full model
+    if(length(group_i)==0){n_full = 1 + n_full}
+    
+    smry = summary(net_i)
+    
+    # est: estimated treatment effects 
+    est = t_vs_ref(smry$random$TE, N.treat, group_i)
+    
+    ### Mean Absolute Error for the Basic Parameters
+    true_parameters = rep(0, N.treat - 1)
+    mae[i] = mean(abs(est[-1] - true_parameters))
+    
+    ### Mean Bias
+    mb[i] = mean(est[-1] - true_parameters)
+    
+    ### number of 95% CrI does not include 0
+    SSresults[i] = sum(smry$random$lower > 0)
+    
+    ### estimated difference between best and worst treatment
+    # find the best, the worst, and the diff
+    all_d = data.frame(smry$random$TE)
+    
+    rank_ = rankogram_plus(net_i)
+    sucra_table = data.frame(sucra = sort(rank_$ranking.random))
+    best = rownames(sucra_table)[1]
+    worest = rownames(sucra_table)[length(rownames(sucra_table))]
+    index_bw = c(which(rownames(all_d) == best), which(rownames(all_d) == worest))
+    diff_bw[i] = all_d[index_bw[1],index_bw[2]]
+    
+    ## corresponding sd
+    bw_sd[i] = smry$random$seTE[index_bw[1], index_bw[2]]
+  
+    
+    ### the best and reference treatment
+    diff_br[i] = all_d[1,index_bw[2]]
+    br_sd[i] = smry$random$seTE[1, index_bw[2]]
+    
+  # all treatments are pooled
+  }else{
+    mae[i] = mb[i] = SSresults[i] = 0
+    diff_bw[i] = bw_sd[i] = diff_br[i] = br_sd[i] = 0
+  }
+}
+#save(mae, mb, SSresults, diff_bw, bw_sd, diff_br, br_sd, data1, file = "A2_smry.RData")
+```
+
+```{r}
+load("A2_smry.RData")
+```
+
+```{r}
+# mean absolute error (basic parameters)
+mean(mae)
+# mean bias (basic parameters)
+mean(mb)
+# percent of NMAs where at least one treatment effect was estimated 
+#   to be non-zero with confidence
+sum(SSresults>0)/N.sim 
+
+# mean # of false positive
+mean(SSresults)
+
+# mean estimated difference between best and worst treatment
+mean(diff_bw) 
+# mean standard deviation for the estimated difference
+mean(bw_sd) 
+
+# mean estimated difference between best and ref treatment
+mean(diff_br) 
+# mean standard deviation for the estimated difference
+mean(br_sd) 
+
+# number of simulations that chose the full model
+n_full
+```
+
+
+
+```{r}
+##### SCENARIO B.1 #######
+N.sim = 1000
+set.seed(42)
+
+group=list()
+net=list()
+
+#### 10 treatments, no treatment effects in the network, star network, heterogeneity
+N.treat=10
+N.studies.comp=3 # studies per comparison
+data1=list()
+#define the treatments in the studies
+t1=c(rep(1,N.studies.comp*(N.treat-1)))
+t2=c()
+for (j in 2:N.treat)  {t2=c(t2,rep(j,N.studies.comp))}
+###generate data
+tau_sq=rlnorm(N.sim,-2.56,1.74)
+tau=sqrt(tau_sq)
+
+for (i in 1:N.sim){
+  if(i%%200==0){print(i)}
+  #print(i)
+  seTE=c(rep(0,N.studies.comp*(N.treat-1))) 
+  TE_true=c(rep(0,N.studies.comp*(N.treat-1))) 
+  TE=c(rep(0,N.studies.comp*(N.treat-1))) 
+  data1[[i]]=data.frame(TE,seTE)
+  data1[[i]]$seTE=0.2*rchisq(N.studies.comp*(N.treat-1),df=1)+0.5
+  data1[[i]]$TE_true=rnorm(N.studies.comp*(N.treat-1),0,tau[i])
+  data1[[i]]$TE=rnorm(N.studies.comp*(N.treat-1),data1[[i]]$TE_true,data1[[i]]$seTE)
+  data1[[i]]$studlab=c(1:(N.studies.comp*(N.treat-1)))
+  data1[[i]]$t1=t1
+  data1[[i]]$t2=t2
+
+  ### NMA model after GFL model selection and pooled groups
+  results = GLF_aicc_2arm(data1[[i]], N.treat)
+  group[[i]] = results[[1]]
+  net[[i]] = results[[2]]
+}
+
+save(data1, group, net, file = "B1.RData")
+```
+
+
+```{r}
+load("B1.RData")
+```
+
+```{r}
+# define result variables
+mae = c()
+mb = c()
+SSresults = c()
+diff_bw = c()
+bw_sd = c()
+diff_br = c()
+br_sd = c()
+n_full = 0
+
+for (i in 1:N.sim){ 
+  group_i = group[[i]]
+  net_i = net[[i]]
+  
+  # if none or some of the treatments are pooled
+  if(typeof(net_i)=="list"){
+    #if not pooling any treatments, full model
+    if(length(group_i)==0){n_full = 1 + n_full}
+    
+    smry = summary(net_i)
+    
+    # est: estimated treatment effects 
+    est = t_vs_ref(smry$random$TE, N.treat, group_i)
+    
+    ### Mean Absolute Error for the Basic Parameters
+    true_parameters = rep(0, N.treat - 1)
+    mae[i] = mean(abs(est[-1] - true_parameters))
+    
+    ### Mean Bias
+    mb[i] = mean(est[-1] - true_parameters)
+    
+    ### number of 95% CrI does not include 0
+    SSresults[i] = sum(smry$random$lower > 0)
+    
+    ### estimated difference between best and worst treatment
+    # find the best, the worst, and the diff
+    all_d = data.frame(smry$random$TE)
+    
+    diff_bw[i] = max(all_d)
+    index_bw = which(all_d == max(all_d), arr.ind = TRUE)
+    
+    ## corresponding sd
+    bw_sd[i] = smry$random$seTE[index_bw[1], index_bw[2]]
+  
+    
+    ### the best and reference treatment
+    diff_br[i] = all_d[1,index_bw[2]]
+    br_sd[i] = smry$random$seTE[1, index_bw[2]]
+    
+    
+  # all treatments are pooled
+  }else{
+    mae[i] = mb[i] = SSresults[i] = 0
+    diff_bw[i] = bw_sd[i] = diff_br[i] = br_sd[i] = 0
+  }
+}
+
+#save(mae, mb, SSresults, diff_bw, bw_sd, diff_br, br_sd, data1,file = "B1_smry.RData")
+```
+
+```{r}
+load("B1_smry.RData")
+```
+
+
+```{r}
+# mean absolute error (basic parameters)
+mean(mae)
+# mean bias (basic parameters)
+mean(mb)
+# percent of NMAs where at least one treatment effect was estimated 
+#   to be non-zero with confidence
+sum(SSresults>0)/N.sim 
+
+# mean # of false positive
+mean(SSresults)
+
+# mean estimated difference between best and worst treatment
+mean(diff_bw) 
+# mean standard deviation for the estimated difference
+mean(bw_sd) 
+
+# mean estimated difference between best and ref treatment
+mean(diff_br) 
+# mean standard deviation for the estimated difference
+mean(br_sd) 
+
+# number of simulations that chose the full model
+n_full
+```
+
+
+```{r}
+##### SCENARIO B.2 #######
+N.sim = 1000
+set.seed(42)
+
+group=list()
+net=list()
+
+#### 10 treatments, no treatment effects in the network, fully connected network, heterogeneity
+N.treat=10
+N.studies.comp=3 # studies per comparison
+data1=list()
+#define the treatments in the studies
+t1=c()
+t2=c()
+for (i in 1:(N.treat-1)){
+  for (k in (i+1):N.treat){
+    for(j in 1:N.studies.comp){
+      t1=c(t1,i)
+      t2=c(t2,k)    }}}
+###generate data
+tau_sq=rlnorm(N.sim,-2.56,1.74)
+tau=sqrt(tau_sq)
+N.stud=length(t1)
+for (i in 1:N.sim){
+  if(i%%50==0){print(i)}
+  
+  seTE=c(rep(0,N.stud)) 
+  TE_true=c(rep(0,N.stud)) 
+  TE=c(rep(0,N.stud))
+  data1[[i]]=data.frame(TE,seTE)
+  data1[[i]]$seTE=0.2*rchisq(N.studies.comp*(N.treat-1),df=1)+0.5
+  data1[[i]]$TE_true=rnorm(N.stud,0,tau[i])
+  data1[[i]]$TE=rnorm(N.stud,data1[[i]]$TE_true,data1[[i]]$seTE)
+  data1[[i]]$studlab=c(1:(N.stud))
+  data1[[i]]$t1=t1
+  data1[[i]]$t2=t2
+
+  
+  ### NMA model after GFL model selection and pooled groups
+  results = GLF_aicc_2arm(data1[[i]], N.treat)
+  group[[i]] = results[[1]]
+  net[[i]] = results[[2]]
+}
+
+save(data1, group, net, file = "B2.RData")
+```
+
+```{r}
+load("B2.RData")
+```
+
+
+```{r}
+# define result variables
+mae = c()
+mb = c()
+SSresults = c()
+diff_bw = c()
+bw_sd = c()
+diff_br = c()
+br_sd = c()
+n_full = 0
+
+for (i in 1:N.sim){ 
+  group_i = group[[i]]
+  net_i = net[[i]]
+  
+  # if none or some of the treatments are pooled
+  if(typeof(net_i)=="list"){
+    #if not pooling any treatments, full model
+    if(length(group_i)==0){n_full = 1 + n_full}
+    
+    smry = summary(net_i)
+    
+    # est: estimated treatment effects 
+    est = t_vs_ref(smry$random$TE, N.treat, group_i)
+    
+    ### Mean Absolute Error for the Basic Parameters
+    true_parameters = rep(0, N.treat - 1)
+    mae[i] = mean(abs(est[-1] - true_parameters))
+    
+    ### Mean Bias
+    mb[i] = mean(est[-1] - true_parameters)
+    
+    ### number of 95% CrI does not include 0
+    SSresults[i] = sum(smry$random$lower > 0)
+    
+    ### estimated difference between best and worst treatment
+    # find the best, the worst, and the diff
+    all_d = data.frame(smry$random$TE)
+    
+    rank_ = rankogram_plus(net_i)
+    sucra_table = data.frame(sucra = sort(rank_$ranking.random))
+    best = rownames(sucra_table)[1]
+    worest = rownames(sucra_table)[length(rownames(sucra_table))]
+    index_bw = c(which(rownames(all_d) == best), which(rownames(all_d) == worest))
+    diff_bw[i] = all_d[index_bw[1],index_bw[2]]
+    
+    ## corresponding sd
+    bw_sd[i] = smry$random$seTE[index_bw[1], index_bw[2]]
+  
+    
+    ### the best and reference treatment
+    diff_br[i] = all_d[1,index_bw[2]]
+    br_sd[i] = smry$random$seTE[1, index_bw[2]]
+    
+    
+  # all treatments are pooled
+  }else{
+    mae[i] = mb[i] = SSresults[i] = 0
+    diff_bw[i] = bw_sd[i] = diff_br[i] = br_sd[i] = 0
+  }
+}
+
+#save(mae, mb, SSresults, diff_bw, bw_sd, diff_br, br_sd, data1, file = "B2_smry.RData")
+```
+
+```{r}
+load("B2_smry.RData")
+```
+
+
+```{r}
+# mean absolute error (basic parameters)
+mean(mae)
+# mean bias (basic parameters)
+mean(mb)
+# percent of NMAs where at least one treatment effect was estimated 
+#   to be non-zero with confidence
+sum(SSresults>0)/N.sim 
+
+# mean # of false positive
+mean(SSresults)
+
+# mean estimated difference between best and worst treatment
+mean(diff_bw) 
+# mean standard deviation for the estimated difference
+mean(bw_sd) 
+
+# mean estimated difference between best and ref treatment
+mean(diff_br) 
+# mean standard deviation for the estimated difference
+mean(br_sd) 
+
+# number of simulations that chose the full model
+n_full
+```
+
+
+```{r}
+##### SCENARIO D #######
+N.sim = 1000
+set.seed(42)
+
+group=list()
+net=list()
+
+N.treat=3
+N.studies.comp=1 # studies per comparison
+data1=list()
+#define the treatments in the studies
+t1=c()
+t2=c()
+for (i in 1:(N.treat-1)){
+  for (k in (i+1):N.treat){
+    for(j in 1:N.studies.comp){
+      t1=c(t1,i)
+      t2=c(t2,k)    }}}
+N.stud=length(t1)
+for (i in 1:N.sim){
+  seTE=c(rep(0,N.stud)) 
+  TE=c(rep(0,N.stud)) 
+  data1[[i]]=data.frame(TE,seTE)
+  data1[[i]]$seTE=0.2*rchisq(N.stud,df=1)+0.5
+  data1[[i]]$TE=rnorm(N.stud,0,data1[[i]]$seTE)
+  data1[[i]]$studlab=c(1:(N.stud))
+  data1[[i]]$t1=t1
+  data1[[i]]$t2=t2
+  
+  ### NMA model after GFL model selection and pooled groups
+  results = GLF_aicc_2arm(data1[[i]], N.treat)
+  group[[i]] = results[[1]]
+  net[[i]] = results[[2]]
+}
+
+save(data1, group, net, file = "D.RData")
+```
+
+```{r}
+load("D.RData")
+```
+
+```{r}
+# define result variables
+mae = c()
+mb = c()
+SSresults = c()
+diff_bw = c()
+bw_sd = c()
+diff_br = c()
+br_sd = c()
+n_full = 0
+N.treat=3
+
+for (i in 1:N.sim){ 
+  group_i = group[[i]]
+  net_i = net[[i]]
+  
+  # if none or some of the treatments are pooled
+  if(typeof(net_i)=="list"){
+    #if not pooling any treatments, full model
+    if(length(group_i)==0){n_full = 1 + n_full}
+    
+    smry = summary(net_i)
+    
+    # est: estimated treatment effects 
+    est = t_vs_ref(smry$random$TE, N.treat, group_i)
+    
+    ### Mean Absolute Error for the Basic Parameters
+    true_parameters = rep(0, N.treat - 1)
+    mae[i] = mean(abs(est[-1] - true_parameters))
+    
+    ### Mean Bias
+    mb[i] = mean(est[-1] - true_parameters)
+    
+    ### number of 95% CrI does not include 0
+    SSresults[i] = sum(smry$random$lower > 0)
+    
+    ### estimated difference between best and worst treatment
+    # find the best, the worst, and the diff
+    all_d = data.frame(smry$random$TE)
+    
+    rank_ = rankogram_plus(net_i)
+    sucra_table = data.frame(sucra = sort(rank_$ranking.random))
+    best = rownames(sucra_table)[1]
+    worest = rownames(sucra_table)[length(rownames(sucra_table))]
+    index_bw = c(which(rownames(all_d) == best), which(rownames(all_d) == worest))
+    diff_bw[i] = all_d[index_bw[1],index_bw[2]]
+    
+    ## corresponding sd
+    bw_sd[i] = smry$random$seTE[index_bw[1], index_bw[2]]
+  
+    
+    ### the best and reference treatment
+    diff_br[i] = all_d[1,index_bw[2]]
+    br_sd[i] = smry$random$seTE[1, index_bw[2]]
+    
+    
+  # all treatments are pooled
+  }else{
+    mae[i] = mb[i] = SSresults[i] = 0
+    diff_bw[i] = bw_sd[i] = diff_br[i] = br_sd[i] = 0
+  }
+}
+#save(mae, mb, SSresults, diff_bw, bw_sd, diff_br, br_sd, data1,file = "D.RData")
+
+```
+
+
+```{r}
+# mean absolute error (basic parameters)
+mean(mae)
+# mean bias (basic parameters)
+mean(mb)
+# percent of NMAs where at least one treatment effect was estimated 
+#   to be non-zero with confidence
+sum(SSresults>0)/N.sim 
+
+# mean # of false positive
+mean(SSresults)
+
+# mean estimated difference between best and worst treatment
+mean(diff_bw) 
+# mean standard deviation for the estimated difference
+mean(bw_sd) 
+
+# mean estimated difference between best and ref treatment
+mean(diff_br) 
+# mean standard deviation for the estimated difference
+mean(br_sd) 
+
+# number of simulations that chose the full model
+n_full
+```
+
+
+```{r}
+##### SCENARIO E.2 #######
+N.sim = 1000
+set.seed(42)
+
+group=list()
+net=list()
+
+N.treat=10
+N.studies.comp=1 # studies per comparison
+data1=list()
+#define the treatments in the studies
+t1=c()
+t2=c()
+for (i in 1:(N.treat-1)){
+  for (k in (i+1):N.treat){
+    for(j in 1:N.studies.comp){
+      t1=c(t1,i)
+      t2=c(t2,k)  }}}
+N.stud=length(t1)
+TE=rep(1,9) ### true treatment effects for basic parameters
+for (i in 1:N.sim){
+  if(i%%200==0){print(i)}
+  
+  seTE=c(rep(0,N.stud)) 
+  TE1=c(rep(1,N.studies.comp*(N.treat-1)),rep(0,N.stud-N.studies.comp*(N.treat-1))) 
+  data1[[i]]=data.frame(TE1,seTE)
+  data1[[i]]$seTE=0.2*rchisq(N.stud,df=1)+0.5
+  data1[[i]]$TE=rnorm(N.stud,TE1,data1[[i]]$seTE)
+  data1[[i]]$studlab=c(1:(N.stud))
+  data1[[i]]$t1=t1
+  data1[[i]]$t2=t2
+#}
+  
+  ### NMA model after GFL model selection and pooled groups
+  results = GLF_aicc_2arm(data1[[i]], N.treat)
+  group[[i]] = results[[1]]
+  net[[i]] = results[[2]]
+}
+
+save(data1, group, net, file = "E2.RData")
+```
+
+
+```{r}
+load("E2.RData")
+```
+
+
+```{r}
+# define result variables
+mae = c()
+mb = c()
+SSresults = c()
+diff_bw = c()
+bw_sd = c()
+diff_br = c()
+br_sd = c()
+n_full = 0
+power_ = c()
+
+for (i in 1:N.sim){ 
+  group_i = group[[i]]
+  net_i = net[[i]]
+  
+  # if none or some of the treatments are pooled
+  if(typeof(net_i)=="list"){
+    smry = summary(net_i)
+    
+    #if not pooling any treatments, full model
+    if(length(group_i)==0){n_full = 1 + n_full}
+    
+    # est: estimated treatment effects 
+    est = t_vs_ref(smry$random$TE, N.treat, group_i)
+    
+    ### Mean Absolute Error for the Basic Parameters
+    true_parameters = rep(1, N.treat - 1)
+    mae[i] = mean(abs(est[-1] - true_parameters))
+    
+    ### Mean Bias
+    mb[i] = mean(est[-1] - true_parameters)
+    
+    ### number of 95% CrI does not include 0 among equally 
+    #   effective treatments
+    full_lower = gen_full_lower(N.treat, smry, group_i)
+    lower = full_lower[2:10, 2:10]
+    SSresults[i] = sum(lower > 0)  
+    
+    ### power: correctly rejecting the null hypothesis (no TE)
+    #   number of 95% CrI does not include 0 among unequally effective treatments
+    power_[i] = sum(full_lower > 0) - SSresults[i]
+    
+    ### estimated difference between best and worst treatment
+    # find the best, the worst, and the diff
+    all_d = data.frame(smry$random$TE)
+    
+    rank_ = rankogram_plus(net_i)
+    sucra_table = data.frame(sucra = sort(rank_$ranking.random))
+    best = rownames(sucra_table)[1]
+    worest = rownames(sucra_table)[length(rownames(sucra_table))]
+    index_bw = c(which(rownames(all_d) == best), which(rownames(all_d) == worest))
+    diff_bw[i] = all_d[index_bw[1], index_bw[2]]
+    
+    ## corresponding sd
+    bw_sd[i] = smry$random$seTE[index_bw[1], index_bw[2]]
+  
+    
+    ### the best and reference treatment
+    diff_br[i] = all_d[1,index_bw[2]]
+    br_sd[i] = smry$random$seTE[1, index_bw[2]]
+    
+  # all treatments are pooled
+  }else{
+    mae[i] = mb[i] = SSresults[i] = power_[i] = 0
+    diff_bw[i] = bw_sd[i] = diff_br[i] = br_sd[i] = 0
+  }
+}
+#save(mae, mb, SSresults, diff_bw, bw_sd, diff_br, br_sd, power, n_full, file = "E2_smry.RData")
+```
+
+
+```{r}
+load("E2_smry.RData")
+```
+
+
+```{r}
+# mean absolute error (basic parameters)
+mean(mae)
+# mean bias (basic parameters)
+mean(mb)
+
+# percent of NMAs where at least one treatment effect was estimated 
+#   to be non-zero with confidence
+sum(SSresults>0)/N.sim 
+# mean # of false positive
+mean(SSresults)
+
+# number of simulations that chose the full model
+n_full
+
+# mean estimated difference between best and worst treatment
+mean(diff_bw) 
+# mean standard deviation for the estimated difference
+mean(bw_sd) 
+
+# mean estimated difference between best and ref treatment
+mean(diff_br) 
+# mean standard deviation for the estimated difference
+mean(br_sd) 
+
+sum(power_)/(N.sim*(N.treat-1))
+```
+
+
+```{r}
+##### SCENARIO F.2 #######
+N.sim = 1000
+set.seed(42)
+
+group=list()
+net=list()
+
+N.treat=10
+N.studies.comp=1 # studies per comparison
+data1=list()
+#define the treatments in the studies
+t1=c()
+t2=c()
+for (i in 1:(N.treat-1)){
+  for (k in (i+1):N.treat){
+    for(j in 1:N.studies.comp){
+      t1=c(t1,i)
+      t2=c(t2,k)  }}}
+N.stud=length(t1)
+comp=c(rep(1,N.stud))
+for (i in 1:N.stud){if ((t1[i]<6&t2[i]<6)|(t1[i]>5&t2[i]>5)){comp[i]=0}}
+for (i in 1:N.sim){
+  if(i%%200==0){print(i)}
+  
+  seTE=c(rep(0,N.stud)) 
+  TE=c(rep(0,N.stud)) 
+  data1[[i]]=data.frame(TE,seTE)
+  data1[[i]]$seTE=0.2*rchisq(N.stud,df=1)+0.5
+  data1[[i]]$TE=rnorm(N.stud,comp,data1[[i]]$seTE)
+  data1[[i]]$studlab=c(1:(N.stud))
+  data1[[i]]$t1=t1
+  data1[[i]]$t2=t2
+#}
+#TE=comp 
+  ### NMA model after GFL model selection and pooled groups
+  results = GLF_aicc_2arm(data1[[i]], N.treat)
+  group[[i]] = results[[1]]
+  net[[i]] = results[[2]]
+}
+
+save(data1, group, net, file = "F2.RData")
+```
+
+
+```{r}
+load("F2.RData")
+```
+
+
+```{r}
+# define result variables
+mae = c()
+mb = c()
+SSresults = c()
+diff_bw = c()
+bw_sd = c()
+diff_br = c()
+br_sd = c()
+n_full = 0
+power_ = c()
+
+for (i in 1:N.sim){ 
+  group_i = group[[i]]
+  net_i = net[[i]]
+  
+  # if none or some of the treatments are pooled
+  if(typeof(net_i)=="list"){
+    #if not pooling any treatments, full model
+    if(length(group_i)==0){n_full = 1 + n_full}
+    
+    smry = summary(net_i)
+  
+    # est: estimated treatment effects 
+    est = t_vs_ref(smry$random$TE, N.treat, group_i)
+    
+    ### Mean Absolute Error for the Basic Parameters
+    true_parameters = comp
+    mae[i] = mean(abs(est[-1] - true_parameters))
+    
+    ### Mean Bias
+    mb[i] = mean(est[-1] - true_parameters)
+    
+    ### number of 95% CrI does not include 0 among equally effective treatments
+    full_lower = gen_full_lower(N.treat, smry, group_i)
+    lower_1 = full_lower[1:5, 1:5]
+    lower_2 = full_lower[6:10, 6:10]
+    SSresults[i] = sum(lower_1 > 0) + sum(lower_2 > 0)
+    
+    ### power: correctly rejecting the null hypothesis (no TE)
+    #   number of 95% CrI does not include 0 among unequally effective treatments
+    power_[i] = sum(full_lower > 0) - SSresults[i]
+    
+    ### estimated difference between best and worst treatment
+    # find the best, the worst, and the diff
+    all_d = data.frame(smry$random$TE)
+    
+    rank_ = rankogram_plus(net_i)
+    sucra_table = data.frame(sucra = sort(rank_$ranking.random))
+    best = rownames(sucra_table)[1]
+    worest = rownames(sucra_table)[length(rownames(sucra_table))]
+    index_bw = c(which(rownames(all_d) == best), which(rownames(all_d) == worest))
+    diff_bw[i] = all_d[index_bw[1],index_bw[2]]
+    
+    ## corresponding sd
+    bw_sd[i] = smry$random$seTE[index_bw[1], index_bw[2]]
+  
+    
+    ### the best and reference treatment
+    diff_br[i] = all_d[1,index_bw[2]]
+    br_sd[i] = smry$random$seTE[1, index_bw[2]]
+    #print(diff_br[i])
+    
+  # all treatments are pooled
+  }else{
+    mae[i] = mb[i] = SSresults[i] = power_[i] = 0
+    diff_bw[i] = bw_sd[i] = diff_br[i] = br_sd[i] = 0
+  }
+}
+
+#save(mae, mb, SSresults, diff_bw, bw_sd, diff_br, br_sd, power, n_full, file = "F2_smry.RData")
+```
+
+```{r}
+load("F2_smry.RData")
+```
+
+```{r}
+# mean absolute error (basic parameters)
+mean(mae)
+# mean bias (basic parameters)
+mean(mb)
+
+# percent of NMAs where at least one treatment effect was estimated 
+#   to be non-zero with confidence
+sum(SSresults>0)/N.sim 
+# mean # of false positive
+mean(SSresults)
+
+# power
+sum(power_>0)/N.sim 
+
+# number of simulations that chose the full model
+n_full
+
+# mean estimated difference between best and worst treatment
+mean(diff_bw) 
+# mean standard deviation for the estimated difference
+mean(bw_sd) 
+
+# mean estimated difference between best and ref treatment
+mean(diff_br) 
+# mean standard deviation for the estimated difference
+mean(br_sd) 
+
+sum(power_)/(25*N.sim) 
+```
+
+
+```{r}
+##### SCENARIO G.2 ########
+N.sim = 1000
+set.seed(42)
+
+group=list()
+net=list()
+
+N.treat=10
+N.studies.comp=1 # studies per comparison
+data1=list()
+#define the treatments in the studies
+t1=c()
+t2=c()
+for (i in 1:(N.treat-1)){
+  for (k in (i+1):N.treat){
+    for(j in 1:N.studies.comp){
+      t1=c(t1,i)
+      t2=c(t2,k)  } }}
+TE1=c(0.9+0.1*(1:(N.treat-1)))
+TE1=c(0,TE1)
+TE2=(TE1[t2]-TE1[t1])
+N.stud=length(t1)
+seTE=c(rep(0,N.stud)) 
+TE=c(rep(0,N.stud)) 
+for (i in 1:N.sim){
+  if(i%%200==0){print(i)}
+  
+  data1[[i]]=data.frame(TE,seTE)
+  data1[[i]]$seTE=0.2*rchisq(N.stud,df=1)+0.5
+  data1[[i]]$TE=rnorm(N.stud,TE2,data1[[i]]$seTE)
+  data1[[i]]$studlab=c(1:(N.stud))
+  data1[[i]]$t1=t1
+  data1[[i]]$t2=t2
+#}
+  
+  ### NMA model after GFL model selection and pooled groups
+  results = GLF_aicc_2arm(data1[[i]], N.treat)
+  group[[i]] = results[[1]]
+  net[[i]] = results[[2]]
+}
+
+save(data1, group, net, file = "G2.RData")
+```
+
+```{r}
+load("G2.RData")
+```
+
+```{r}
+# define result variables
+mae = c()
+mb = c()
+SSresults = c()
+diff_bw = c()
+bw_sd = c()
+diff_br = c()
+br_sd = c()
+n_full = 0
+power_ = c()
+
+for (i in 1:N.sim){ 
+  group_i = group[[i]]
+  net_i = net[[i]]
+  
+  # if none or some of the treatments are pooled
+  if(typeof(net_i)=="list"){
+    smry = summary(net_i)
+    
+    #if not pooling any treatments, full model
+    if(length(group_i)==0){n_full = 1 + n_full}
+    
+    # est: estimated treatment effects 
+    est = t_vs_ref(smry$random$TE, N.treat, group_i)
+    
+    ### Mean Absolute Error for the Basic Parameters
+    true_parameters = c(0.9+0.1*(1:(N.treat-1)))
+    mae[i] = mean(abs(est[-1] - true_parameters))
+    
+    ### Mean Bias
+    mb[i] = mean(est[-1] - true_parameters)
+    
+    ### not exist equally effective treatments
+    ### power: correctly rejecting the null hypothesis (no TE)
+    #   number of 95% CrI does not include 0 among unequally effective treatments
+    full_lower = gen_full_lower(N.treat, smry, group_i)
+    power_[i] = sum(full_lower > 0)
+    
+    ### estimated difference between best and worst treatment
+    # find the best, the worst, and the diff
+    all_d = data.frame(smry$random$TE)
+    
+    rank_ = rankogram_plus(net_i)
+    sucra_table = data.frame(sucra = sort(rank_$ranking.random))
+    best = rownames(sucra_table)[1]
+    worest = rownames(sucra_table)[length(rownames(sucra_table))]
+    index_bw = c(which(rownames(all_d) == best), which(rownames(all_d) == worest))
+    diff_bw[i] = all_d[index_bw[1],index_bw[2]]
+    
+    ## corresponding sd
+    bw_sd[i] = smry$random$seTE[index_bw[1], index_bw[2]]
+  
+    
+    ### the best and reference treatment
+    diff_br[i] = all_d[1,index_bw[2]]
+    br_sd[i] = smry$random$seTE[1, index_bw[2]]
+    
+  # all treatments are pooled
+  }else{
+    mae[i] = mb[i] = 0
+    diff_bw[i] = bw_sd[i] = diff_br[i] = br_sd[i] = 0
+  }
+}
+
+#save(mae, mb, SSresults, diff_bw, bw_sd, diff_br, br_sd, power, n_full, file = "G2_smry.RData")
+```
+
+```{r}
+load("G2_smry.RData")
+```
+
+```{r}
+# mean absolute error (basic parameters)
+mean(mae)
+# mean bias (basic parameters)
+mean(mb)
+
+# not exist equally effective treatments
+
+# power
+sum(power_>0)/N.sim 
+
+# number of simulations that chose the full model
+n_full
+
+# mean estimated difference between best and worst treatment
+mean(diff_bw) 
+# mean standard deviation for the estimated difference
+mean(bw_sd) 
+
+# mean estimated difference between best and ref treatment
+mean(diff_br) 
+# mean standard deviation for the estimated difference
+mean(br_sd) 
+
+sum(power_)/(45*N.sim)
+```
+
+
+
+
+```{r}
+##### SCENARIO H.2 #######
+N.sim = 1000
+set.seed(42)
+
+group=list()
+net=list()
+
+N.treat=10
+N.studies.comp=1 # studies per comparison
+data1=list()
+#define the treatments in the studies
+t1=c()
+t2=c()
+for (i in 1:(N.treat-1)){
+  for (k in (i+1):N.treat){
+    for(j in 1:N.studies.comp){
+      t1=c(t1,i)
+      t2=c(t2,k)  }}}
+N.stud=length(t1)
+comp=c(rep(0,N.stud))
+for (i in 1:N.stud){if  ((t1[i]==1&t2[i] %in% c(2:5))){comp[i]=1}
+  if  ((t1[i]==1&t2[i] %in% c(6:10))){comp[i]=2}
+  if  ((t1[i]%in% c(2:5)&t2[i] %in% c(6:10))){comp[i]=1}
+  }
+for (i in 1:N.sim){
+  if(i%%200==0){print(i)}
+  
+  seTE=c(rep(0,N.stud)) 
+  TE=c(rep(0,N.stud)) 
+  data1[[i]]=data.frame(TE,seTE)
+  data1[[i]]$seTE=0.2*rchisq(N.stud,df=1)+0.5
+  data1[[i]]$TE=rnorm(N.stud,comp,data1[[i]]$seTE)
+  data1[[i]]$studlab=c(1:(N.stud))
+  data1[[i]]$t1=t1
+  data1[[i]]$t2=t2
+#  }
+# TE=c(1,1,1,1,2,2,2,2,2)
+  
+  ### NMA model after GFL model selection and pooled groups
+  results = GLF_aicc_2arm(data1[[i]], N.treat)
+  group[[i]] = results[[1]]
+  net[[i]] = results[[2]]
+}
+
+save(data1, group, net, file = "H2.RData")
+```
+
+```{r}
+load("H2.RData")
+```
+
+```{r}
+# define result variables
+mae = c()
+mb = c()
+SSresults = c()
+diff_bw = c()
+bw_sd = c()
+diff_br = c()
+br_sd = c()
+n_full = 0
+power_ = c()
+
+for (i in 1:N.sim){ 
+  group_i = group[[i]]
+  net_i = net[[i]]
+  
+  # if none or some of the treatments are pooled
+  if(typeof(net_i)=="list"){
+    
+    #if not pooling any treatments, full model
+    if(length(group_i)==0){n_full = 1 + n_full}
+    
+    smry = summary(net_i)
+    
+    # est: estimated treatment effects 
+    est = t_vs_ref(smry$random$TE, N.treat, group_i)
+    
+    ### Mean Absolute Error for the Basic Parameters
+    true_parameters = c(1,1,1,1,2,2,2,2,2)
+    mae[i] = mean(abs(est[-1] - true_parameters))
+    
+    ### Mean Bias
+    mb[i] = mean(est[-1] - true_parameters)
+    
+    ### number of 95% CrI does not include 0 among equally effective treatments
+    full_lower = gen_full_lower(N.treat, smry, group_i)
+    lower_1 = full_lower[2:5, 2:5]
+    lower_2 = full_lower[6:10, 6:10]
+    SSresults[i] = sum(lower_1 > 0) + sum(lower_2 > 0)
+    
+    ### power: correctly rejecting the null hypothesis (no TE)
+    #   number of 95% CrI does not include 0 among unequally effective treatments
+    power_[i] = sum(full_lower > 0) - SSresults[i]
+    
+    ### estimated difference between best and worst treatment
+    # find the best, the worst, and the diff
+    all_d = data.frame(smry$random$TE)
+    
+    rank_ = rankogram_plus(net_i)
+    sucra_table = data.frame(sucra = sort(rank_$ranking.random))
+    best = rownames(sucra_table)[1]
+    worest = rownames(sucra_table)[length(rownames(sucra_table))]
+    index_bw = c(which(rownames(all_d) == best), which(rownames(all_d) == worest))
+    diff_bw[i] = all_d[index_bw[1],index_bw[2]]
+    
+    ## corresponding sd
+    bw_sd[i] = smry$random$seTE[index_bw[1], index_bw[2]]
+  
+    
+    ### the best and reference treatment
+    diff_br[i] = all_d[1,index_bw[2]]
+    br_sd[i] = smry$random$seTE[1, index_bw[2]]
+    
+  # all treatments are pooled
+  }else{
+    mae[i] = mb[i] = SSresults[i] = 0
+    diff_bw[i] = bw_sd[i] = diff_br[i] = br_sd[i] = 0
+  }
+}
+
+#save(mae, mb, SSresults, diff_bw, bw_sd, diff_br, br_sd, power, n_full, file = "H2_smry.RData")
+```
+
+```{r}
+load("H2_smry.RData")
+```
+
+```{r}
+# mean absolute error (basic parameters)
+mean(mae)
+# mean bias (basic parameters)
+mean(mb)
+
+# percent of NMAs where at least one treatment effect was estimated 
+#   to be non-zero with confidence
+sum(SSresults>0)/N.sim 
+# mean # of false positive
+mean(SSresults)
+
+# power
+sum(power_>0)/N.sim 
+
+# number of simulations that chose the full model
+n_full
+
+# mean estimated difference between best and worst treatment
+mean(diff_bw) 
+# mean standard deviation for the estimated difference
+mean(bw_sd) 
+
+# mean estimated difference between best and ref treatment
+mean(diff_br) 
+# mean standard deviation for the estimated difference
+mean(br_sd) 
+
+sum(power_)/(29*N.sim)
+```
+
+
+
+
+
+
+
+
+
