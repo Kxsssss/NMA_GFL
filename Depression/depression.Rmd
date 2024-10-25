@@ -119,6 +119,9 @@ sum_table = rbind(summary(fit), c(K, 0, rss_full))
 sum_table_a = data.frame(cbind(sum_table, AICc = AICc_rss(rss, Ks, n)))
 rownames(sum_table_a) = 1:nrow(sum_table_a)
 
+#Add deltaAICc
+sum_table_a$delta_AICc = sum_table_a$AICc - min(sum_table_a$AICc)
+
 sub_sum = data.frame()
 for (i in 0:K){
   # select all rows that have df == i
@@ -143,12 +146,13 @@ round(sub_sum,1)
 ### DRAWING THE COORDINATE PATH BY COODING
 #   (the red line represent the best lambda under AICc)
 
-fit = fusedlasso(y=w%*%y, X=w%*%X, graph = gr, gamma=1)
-fit$beta <- rbind(rep(0,  dim(fit$beta)[2]), fit$beta)
-fit$bls <- c(0, fit$bls)
+# Create a new fit_plot object with a row of 0's for ref trt
+fit_plot <- fit
+fit_plot$beta <- rbind(rep(0,  dim(fit_plot$beta)[2]), fit_plot$beta)
+fit_plot$bls <- c(0, fit_plot$bls)
 
-p_matrix<- rbind(t(fit$beta), fit$bls)
-x <- c(0, rev(fit$lambda))
+p_matrix<- rbind(t(fit_plot$beta), fit_plot$bls)
+x <- c(0, rev(fit_plot$lambda))
 
 data <- data.frame(x = rep(x, ncol(p_matrix)), 
                    value=rev(as.numeric(p_matrix)), 
@@ -165,9 +169,9 @@ data$treatment <- factor(data$treatment, levels = c(5,8,12,11,3,2,7,9,1,6,4,10))
 
 ggplot(data = data, aes(x=x, y=value)) + 
   geom_line(aes(colour=treatment))+                            
-  geom_vline(xintercept = rev(fit$lambda[-c(best_index, which(fit$lambda > 12))]),
+  geom_vline(xintercept = rev(fit_plot$lambda[-c(best_index, which(fit_plot$lambda > 12))]),
              linetype="dashed") +
-  geom_vline(xintercept = fit$lambda[best_index], linetype="dashed", color = "red") +
+  geom_vline(xintercept = fit_plot$lambda[best_index], linetype="dashed", color = "red") +
   xlab(expression(lambda)) + ylab("Coordinates of d")
 ```
 
