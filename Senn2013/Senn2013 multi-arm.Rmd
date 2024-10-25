@@ -167,13 +167,14 @@ tt
 ### DRAWING THE COORDINATE PATH BY COODING
 #   (the red line represent the best lambda under AICc)
 
-fit = fusedlasso(y=w%*%y, X=w%*%X, graph = gr, gamma=1)
-fit$beta <- rbind(rep(0,  dim(fit$beta)[2]), fit$beta)
-fit$bls <- c(0, fit$bls)
-fit$lambda <- (fit$lambda)^(1/3)
+# Create a new fit_plot object with a row of 0's for ref trt
+fit_plot <- fit
+fit_plot$beta <- rbind(rep(0,  dim(fit_plot$beta)[2]), fit_plot$beta)
+fit_plot$bls <- c(0, fit_plot$bls)
+fit_plot$lambda <- (fit_plot$lambda)^(1/3)
 
-p_matrix<- rbind(t(fit$beta), fit$bls)
-x <- c(0, rev(fit$lambda))
+p_matrix<- rbind(t(fit_plot$beta), fit_plot$bls)
+x <- c(0, rev(fit_plot$lambda))
 
 
 data <- data.frame(x = rep(x, ncol(p_matrix)), 
@@ -185,8 +186,8 @@ data$treatment <- factor(data$treatment, levels = c(1,9,8,10,3,2,5,4,6,7))
 
 ggplot(data = data, aes(x=x, y=value)) + 
   geom_line(aes(colour=treatment))+                            
-  geom_vline(xintercept = rev(fit$lambda[-35]), linetype="dashed") +
-  geom_vline(xintercept = fit$lambda[35], linetype="dashed", color = "red") +
+  geom_vline(xintercept = rev(fit_plot$lambda[-35]), linetype="dashed") +
+  geom_vline(xintercept = fit_plot$lambda[35], linetype="dashed", color = "red") +
   xlab(expression(lambda^{frac(1, 3)})) + ylab("Coordinates of d")
 ```
 
